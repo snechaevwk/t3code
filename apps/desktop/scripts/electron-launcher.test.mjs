@@ -76,18 +76,18 @@ describe("electron development launcher", () => {
 
   it("keeps the native Electron executable name inside the branded macOS bundle", () => {
     const paths = resolveMacLauncherPaths(
-      "/repo/apps/desktop/.electron-runtime/SN Code (Dev).app",
-      "SN Code (Dev)",
+      "/repo/apps/desktop/.electron-runtime/T3 Code (Dev).app",
+      "T3 Code (Dev)",
     );
 
-    assert.equal(paths.launcherExecutableName, "SN Code (Dev) Launcher");
+    assert.equal(paths.launcherExecutableName, "T3 Code (Dev) Launcher");
     assert.equal(
       paths.launcherBinaryPath,
-      "/repo/apps/desktop/.electron-runtime/SN Code (Dev).app/Contents/MacOS/SN Code (Dev) Launcher",
+      "/repo/apps/desktop/.electron-runtime/T3 Code (Dev).app/Contents/MacOS/T3 Code (Dev) Launcher",
     );
     assert.equal(
       paths.runtimeElectronBinaryPath,
-      "/repo/apps/desktop/.electron-runtime/SN Code (Dev).app/Contents/MacOS/Electron",
+      "/repo/apps/desktop/.electron-runtime/T3 Code (Dev).app/Contents/MacOS/Electron",
     );
 
     const script = makeDevelopmentLauncherScript({
@@ -98,7 +98,7 @@ describe("electron development launcher", () => {
     });
     assert.include(
       script,
-      "exec '/repo/apps/desktop/.electron-runtime/SN Code (Dev).app/Contents/MacOS/Electron'",
+      "exec '/repo/apps/desktop/.electron-runtime/T3 Code (Dev).app/Contents/MacOS/Electron'",
     );
     assert.notInclude(script, "node_modules/electron");
   });
@@ -117,13 +117,13 @@ describe("electron development launcher", () => {
   });
 
   it("ad-hoc signs the complete development app bundle", () => {
-    assert.deepEqual(resolveMacCodeSignArguments("/runtime/SN Code (Dev).app"), [
+    assert.deepEqual(resolveMacCodeSignArguments("/runtime/T3 Code (Dev).app"), [
       "--force",
       "--deep",
       "--sign",
       "-",
       "--timestamp=none",
-      "/runtime/SN Code (Dev).app",
+      "/runtime/T3 Code (Dev).app",
     ]);
   });
 

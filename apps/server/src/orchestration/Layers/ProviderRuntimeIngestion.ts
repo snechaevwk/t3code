@@ -56,6 +56,7 @@ import { forkParked } from "../../serverActivation.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { canReplaceThreadTitle } from "../threadTitles.ts";
+import * as OmThreadUsage from "../../om/ThreadUsage.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 // Suffixed, not prefixed: `clearTurnStateForSession` sweeps by thread prefix.
@@ -1042,6 +1043,36 @@ export function runtimeEventToActivities(
 const make = Effect.gen(function* () {
   const threadBackgroundLiveness = yield* ThreadBackgroundLivenessService;
   const threadPlanProgress = yield* ThreadPlanProgressService;
+  const omThreadUsage = yield* Effect.serviceOption(OmThreadUsage.ThreadUsageService);
+  // OM Code: persist each finished turn's token usage and feed the shell rollup.
+  // The model comes from turn.started when the provider reports it, else from
+  // the thread's current selection.
+  const omTurnModelByThread = new Map<string, string>();
+  const omTurnUsageActivities = Effect.fn("omTurnUsageActivities")(function* (
+    event: ProviderRuntimeEvent,
+    threadId: ThreadId,
+  ) {
+    if (event.type === "turn.started" && event.payload.model !== undefined) {
+      omTurnModelByThread.set(threadId, event.payload.model);
+    }
+    if (event.type !== "turn.completed" && event.type !== "turn.aborted") return [];
+    const model =
+      omTurnModelByThread.get(threadId) ??
+      Option.getOrUndefined(
+        yield* projectionSnapshotQuery
+          .getThreadShellById(threadId)
+          .pipe(Effect.orElseSucceed(() => Option.none())),
+      )?.modelSelection.model;
+    omTurnModelByThread.delete(threadId);
+    if (model === undefined) return [];
+    const record = OmThreadUsage.turnUsageRecordFromEvent(event, model);
+    if (record === null) return [];
+    const activity = OmThreadUsage.turnUsageActivity(event, record);
+    if (Option.isSome(omThreadUsage)) {
+      omThreadUsage.value.recordTurn({ threadId, turnKey: activity.id, record });
+    }
+    return [activity];
+  });
   const crypto = yield* Crypto.Crypto;
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
@@ -2601,7 +2632,10 @@ const make = Effect.gen(function* () {
         }
       }
 
-      const activities = runtimeEventToActivities(activityEvent, taskTitle);
+      const activities = [
+        ...runtimeEventToActivities(activityEvent, taskTitle),
+        ...(yield* omTurnUsageActivities(event, thread.id)),
+      ];
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>

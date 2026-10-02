@@ -250,6 +250,7 @@ import {
   type ComposerThreadDraftState,
   type DraftSessionState,
 } from "../composerDraftStore";
+import { ThreadUsageBreakdown, ThreadUsageInline } from "~/om/threadUsage";
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -415,6 +416,11 @@ function SidebarThreadTooltip({
               <div className="min-w-0 truncate text-foreground/75">
                 {terminalProcessLabel(terminalProcessCount)}
               </div>
+            </div>
+          ) : null}
+          {thread.usage ? (
+            <div className="border-t border-border/60 pt-1.5">
+              <ThreadUsageBreakdown usage={thread.usage} />
             </div>
           ) : null}
           {thread.session?.lastError ? (
@@ -1968,6 +1974,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   <span className="text-diff-deletion-foreground">−{diff.deletions}</span>
                 </span>
               ) : null}
+              <ThreadUsageInline usage={thread.usage} />
               <span
                 aria-hidden
                 className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"

@@ -1,0 +1,36 @@
+/*
+ * OM Code fork: a compact, strict look layered over upstream tokens.
+ *
+ * Loaded right after index.css and limited to token overrides plus a few
+ * global rules, so upstream style changes merge without conflicts. Density
+ * mostly comes from the 14px interface default (Settings -> Appearance), which
+ * scales every rem-based size.
+ */
+
+:root {
+  /* Square-ish corners everywhere. */
+  --radius: 0.25rem;
+  --control-radius: 0.25rem;
+  /* Flat surfaces: no frosted glass or floating composer shadow. */
+  --glass-blur: 0px;
+  --glass-saturation: 1;
+  --shadow-composer: none;
+  --shadow-composer-dark: none;
+  /* Tighter sidebar and page gutters. */
+  --sidebar-content-inset: 0.375rem;
+  --sidebar-row-content-inset: 0.5rem;
+  --sidebar-control-gap: 0.375rem;
+  --workspace-gutter: 0.5rem;
+}
+
+/* Terminal-flavoured navigation: the sidebar reads as a monospace listing. */
+[data-sidebar="sidebar"] {
+  font-family: var(--font-mono);
+  letter-spacing: -0.01em;
+}
+
+/* One icon language: every lucide glyph uses the same stroke weight, whatever
+   width its call site asked for. */
+svg.lucide {
+  stroke-width: 1.75;
+}

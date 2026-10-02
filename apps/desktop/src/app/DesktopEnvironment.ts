@@ -95,7 +95,8 @@ export class DesktopEnvironment extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 
-const APP_BASE_NAME = "T3 Code";
+// OM Code fork: display name only; data directories keep their T3 names.
+const APP_BASE_NAME = "OM Code";
 
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;

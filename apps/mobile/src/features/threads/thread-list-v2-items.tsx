@@ -230,6 +230,7 @@ export const ThreadListV2ProjectGroupHeader = memo(function ThreadListV2ProjectG
   const { item } = props;
   const sidebarPane = props.pane === "sidebar";
   const mutedText = sidebarPane ? "text-drawer-foreground-muted" : "text-foreground-tertiary";
+  const titleText = sidebarPane ? "text-drawer-foreground" : "text-foreground";
   return (
     <Pressable
       accessibilityRole="button"
@@ -237,7 +238,14 @@ export const ThreadListV2ProjectGroupHeader = memo(function ThreadListV2ProjectG
       accessibilityHint={`${item.collapsed ? "Expands" : "Collapses"} this project's threads.`}
       accessibilityState={{ expanded: !item.collapsed }}
       onPress={() => props.onToggle(item.groupKey)}
-      className={cn("mb-1 mt-3 flex-row items-center gap-1.5", sidebarPane ? "px-3" : "px-5")}
+      className={cn(
+        "mb-1.5 flex-row items-center gap-1.5",
+        sidebarPane ? "px-3" : "px-5",
+        // Space and a rule keep each project's rows apart from the group above.
+        item.showDivider
+          ? cn("mt-5 border-t pt-3", sidebarPane ? "border-drawer-border" : "border-border")
+          : "mt-3",
+      )}
       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
     >
       <SymbolView
@@ -258,7 +266,7 @@ export const ThreadListV2ProjectGroupHeader = memo(function ThreadListV2ProjectG
         />
       ) : null}
       <Text
-        className={cn("flex-1 text-xs font-t3-medium uppercase", mutedText)}
+        className={cn("flex-1 text-xs font-t3-bold uppercase", titleText)}
         style={{ fontFamily: MONO_FONT }}
         numberOfLines={1}
       >

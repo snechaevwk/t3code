@@ -48,6 +48,11 @@ describe("groupActiveRowsByProject", () => {
       "t1",
       "t3",
     ]);
+    const headers = result.filter((item) => "type" in item && item.type === "v2-project-group");
+    expect(headers.map((header) => "showDivider" in header && header.showDivider)).toEqual([
+      true,
+      true,
+    ]);
   });
 
   it("hides collapsed rows but keeps the header with its count and usage", () => {
@@ -61,6 +66,7 @@ describe("groupActiveRowsByProject", () => {
         count: 2,
         collapsed: true,
         usageLabel: "3K ~$0.75",
+        showDivider: false,
       }),
     ]);
   });

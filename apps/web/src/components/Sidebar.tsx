@@ -3462,7 +3462,7 @@ export default function Sidebar() {
     omGroupOrder,
     routeThreadKey,
   ]);
-  const renderOmGroupHeader = (groupKey: string) => {
+  const renderOmGroupHeader = (groupKey: string, separated: boolean) => {
     const group = omActiveGrouping?.groupByKey.get(groupKey);
     const project = group?.threads[0]
       ? (omProjectGroupByProjectKey.get(
@@ -3478,6 +3478,7 @@ export default function Sidebar() {
         threadCount={group?.threads.length ?? 0}
         usage={sumThreadUsage(group?.threads.map((thread) => thread.usage) ?? [])}
         collapsed={omCollapsedGroupKeys[groupKey] === true}
+        separated={separated}
         onToggle={omToggleGroupCollapsed}
       />
     );
@@ -4943,15 +4944,19 @@ export default function Sidebar() {
                         />,
                       ];
                       let omTrailingHeadersRendered = false;
+                      // Group headers after any other row get a separating gap.
+                      let omRowsAbove = false;
                       for (const item of sidebarListItems) {
                         if (item.kind === "thread") {
                           if (item.section === "active") {
                             for (const groupKey of omActiveGrouping?.beforeThread.get(item.key) ??
                               []) {
-                              items.push(renderOmGroupHeader(groupKey));
+                              items.push(renderOmGroupHeader(groupKey, omRowsAbove));
+                              omRowsAbove = true;
                             }
                           }
                           items.push(renderThreadRow(threadByKey.get(item.key)!, item.section));
+                          omRowsAbove = true;
                           continue;
                         }
                         if (
@@ -4960,7 +4965,8 @@ export default function Sidebar() {
                         ) {
                           omTrailingHeadersRendered = true;
                           for (const groupKey of omActiveGrouping?.trailing ?? []) {
-                            items.push(renderOmGroupHeader(groupKey));
+                            items.push(renderOmGroupHeader(groupKey, omRowsAbove));
+                            omRowsAbove = true;
                           }
                         }
                         switch (item.marker) {

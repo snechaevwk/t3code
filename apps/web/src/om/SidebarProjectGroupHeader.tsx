@@ -17,16 +17,22 @@ export const SidebarProjectGroupHeader = memo(function SidebarProjectGroupHeader
   threadCount: number;
   usage: ThreadUsageSummary | null;
   collapsed: boolean;
+  /** Opens with a gap and a rule when other rows sit above it. */
+  separated: boolean;
   onToggle: (groupKey: string) => void;
 }) {
   const { groupKey, onToggle } = props;
   return (
-    <li className="list-none" data-om-project-group={groupKey}>
+    // The gap and rule make each project's rows read as their own block.
+    <li
+      className={cn("list-none", props.separated && "mt-4 border-t border-sidebar-border pt-2")}
+      data-om-project-group={groupKey}
+    >
       <button
         type="button"
         aria-expanded={!props.collapsed}
         onClick={() => onToggle(groupKey)}
-        className="flex h-6 w-full cursor-pointer items-center gap-1.5 rounded-sm px-1.5 text-left text-xs text-sidebar-muted-foreground outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-sm px-1.5 text-left text-xs text-sidebar-foreground outline-hidden hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ChevronRightIcon
           aria-hidden
@@ -35,11 +41,13 @@ export const SidebarProjectGroupHeader = memo(function SidebarProjectGroupHeader
         {props.project ? (
           <ProjectFavicon project={props.project} className="size-3.5 shrink-0" />
         ) : null}
-        <span className="min-w-0 flex-1 truncate font-medium uppercase tracking-wide">
+        <span className="min-w-0 flex-1 truncate font-semibold uppercase tracking-wide">
           {props.label}
         </span>
         <ThreadUsageInline usage={props.usage} className="text-2xs" />
-        <span className="shrink-0 font-mono tabular-nums">{props.threadCount}</span>
+        <span className="shrink-0 font-mono tabular-nums text-sidebar-muted-foreground">
+          {props.threadCount}
+        </span>
       </button>
     </li>
   );

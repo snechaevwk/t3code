@@ -370,7 +370,8 @@ export function threadListV2ListItemsAreEqual(
         previous.project === item.project &&
         previous.count === item.count &&
         previous.usageLabel === item.usageLabel &&
-        previous.collapsed === item.collapsed
+        previous.collapsed === item.collapsed &&
+        previous.showDivider === item.showDivider
       );
   }
 }

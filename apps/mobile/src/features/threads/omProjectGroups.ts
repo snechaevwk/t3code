@@ -25,6 +25,8 @@ export interface ThreadListV2ProjectGroupListItem {
   /** `608K ~$1.03` precomputed so recycled-list equality sees changes. */
   readonly usageLabel: string | null;
   readonly collapsed: boolean;
+  /** Gap and rule above every header that follows other rows. */
+  readonly showDivider: boolean;
 }
 
 export interface ThreadListV2ProjectGroupInfo {
@@ -88,6 +90,7 @@ export function groupActiveRowsByProject<
       count: groupRows.length,
       usageLabel: usage ? formatThreadUsageInline(usage) : null,
       collapsed,
+      showDivider: result.length > 0,
     });
     if (!collapsed) result.push(...groupRows);
   }

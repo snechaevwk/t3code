@@ -276,20 +276,20 @@ export const ThreadListV2ProjectGroupHeader = memo(function ThreadListV2ProjectG
       >
         {item.title}
       </Text>
-      {OM_THREAD_STATE_ORDER.map((state) =>
-        item.stateCounts[state] > 0 ? (
-          <Text
-            key={state}
-            className={cn(
-              "ml-1.5 text-xs tabular-nums",
-              state === "ready" ? mutedText : STATUS_LABEL_BY_STATUS[state]?.className,
-            )}
-            style={{ fontFamily: MONO_FONT }}
-          >
-            {item.stateCounts[state]}
-          </Text>
-        ) : null,
-      )}
+      <Text className={cn("text-xs tabular-nums", mutedText)} style={{ fontFamily: MONO_FONT }}>
+        {OM_THREAD_STATE_ORDER.filter((state) => item.stateCounts[state] > 0).map(
+          (state, index) => (
+            <Text key={state}>
+              {index > 0 ? "/" : null}
+              <Text
+                className={state === "ready" ? mutedText : STATUS_LABEL_BY_STATUS[state]?.className}
+              >
+                {item.stateCounts[state]}
+              </Text>
+            </Text>
+          ),
+        )}
+      </Text>
     </Pressable>
   );
 });

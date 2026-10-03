@@ -64,16 +64,17 @@ export const SidebarProjectGroupHeader = memo(function SidebarProjectGroupHeader
           {props.label}
         </span>
         <span
-          className="flex shrink-0 items-center gap-2 font-mono tabular-nums"
+          className="flex shrink-0 items-center font-mono tabular-nums"
           title={describeThreadStateCounts(props.stateCounts)}
           aria-label={describeThreadStateCounts(props.stateCounts)}
         >
-          {OM_THREAD_STATE_ORDER.map((state) =>
-            props.stateCounts[state] > 0 ? (
-              <span key={state} className={STATE_CLASS_NAME[state]}>
-                {props.stateCounts[state]}
+          {OM_THREAD_STATE_ORDER.filter((state) => props.stateCounts[state] > 0).map(
+            (state, index) => (
+              <span key={state}>
+                {index > 0 ? <span className="text-sidebar-muted-foreground/60">/</span> : null}
+                <span className={STATE_CLASS_NAME[state]}>{props.stateCounts[state]}</span>
               </span>
-            ) : null,
+            ),
           )}
         </span>
       </button>

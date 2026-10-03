@@ -11,6 +11,10 @@
       "types": "./src/device/hubAccess.ts",
       "default": "./src/device/hubAccess.ts"
     },
+    "./om-thread-usage": {
+      "types": "./src/omThreadUsage.ts",
+      "default": "./src/omThreadUsage.ts"
+    },
     "./worktree-setup": {
       "types": "./src/worktreeSetup.ts",
       "default": "./src/worktreeSetup.ts"

@@ -250,7 +250,8 @@ import {
   type ComposerThreadDraftState,
   type DraftSessionState,
 } from "../composerDraftStore";
-import { ThreadUsageBreakdown, ThreadUsageInline, sumThreadUsage } from "~/om/threadUsage";
+import { sumThreadUsage } from "@t3tools/client-runtime/om-thread-usage";
+import { ThreadUsageBreakdown, ThreadUsageInline } from "~/om/threadUsage";
 import {
   groupThreadsByProject,
   placeGroupHeaders,

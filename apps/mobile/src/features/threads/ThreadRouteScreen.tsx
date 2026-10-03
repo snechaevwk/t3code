@@ -1,4 +1,5 @@
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
+import { formatThreadUsageInline } from "@t3tools/client-runtime/om-thread-usage";
 import { enqueueThreadOutboxMessage } from "../../state/thread-outbox";
 import {
   getComposerDraftSnapshot,
@@ -443,6 +444,8 @@ function ThreadRouteContent(
   const headerSubtitle = [
     selectedThreadProject?.title ?? null,
     selectedEnvironmentConnection?.environmentLabel ?? null,
+    // OM Code: tokens and estimated cost.
+    selectedThread?.usage ? formatThreadUsageInline(selectedThread.usage) : null,
   ]
     .filter(Boolean)
     .join(" · ");

@@ -9,6 +9,7 @@ import {
   NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED,
 } from "../layout/native-mail-search-toolbar";
 import { buildHomeListFilterMenu } from "./home-list-filter-menu";
+import { useOmProjectGroupingPreferences } from "../threads/use-om-project-grouping-preferences";
 import type { HomeHeaderProps } from "./HomeHeader.types";
 
 export type { HomeHeaderEnvironment } from "./HomeHeader.types";
@@ -26,7 +27,12 @@ export function HomeHeader(props: HomeHeaderProps) {
     return searchBarRef.current !== null;
   }, []);
   useHardwareKeyboardCommand("focusSearch", focusSearch);
-  const filterMenu = buildHomeListFilterMenu(props);
+  const omGrouping = useOmProjectGroupingPreferences();
+  const filterMenu = buildHomeListFilterMenu({
+    ...props,
+    groupByProject: omGrouping.groupByProject,
+    onToggleGroupByProject: omGrouping.toggleGroupByProject,
+  });
 
   return (
     <>

@@ -7,47 +7,15 @@
 import type { EnvironmentId, ThreadId, ThreadUsageSummary } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useMemo } from "react";
-import { formatCount, formatTokens, formatUsd } from "@t3tools/shared/usageFormat";
+import {
+  formatEstimatedCost,
+  threadUsageTotalTokens,
+} from "@t3tools/client-runtime/om-thread-usage";
+import { formatCount, formatTokens } from "@t3tools/shared/usageFormat";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 import { useThreadShell } from "~/state/entities";
-
-function threadUsageTotalTokens(usage: ThreadUsageSummary): number {
-  return usage.inputTokens + usage.outputTokens;
-}
-
-/** `~$0.42`, or null when nothing could be priced. Always an estimate. */
-export function formatEstimatedCost(usage: ThreadUsageSummary): string | null {
-  if (usage.estimatedCostUsd === null) return null;
-  return `~${formatUsd(usage.estimatedCostUsd)}${usage.unpricedTurns > 0 ? "+" : ""}`;
-}
-
-/** Sums thread rollups, e.g. for a project group header. */
-export function sumThreadUsage(
-  usages: Iterable<ThreadUsageSummary | null | undefined>,
-): ThreadUsageSummary | null {
-  let total: ThreadUsageSummary | null = null;
-  for (const usage of usages) {
-    if (!usage) continue;
-    total =
-      total === null
-        ? usage
-        : {
-            turns: total.turns + usage.turns,
-            inputTokens: total.inputTokens + usage.inputTokens,
-            cachedInputTokens: total.cachedInputTokens + usage.cachedInputTokens,
-            outputTokens: total.outputTokens + usage.outputTokens,
-            reasoningTokens: total.reasoningTokens + usage.reasoningTokens,
-            estimatedCostUsd:
-              total.estimatedCostUsd === null && usage.estimatedCostUsd === null
-                ? null
-                : (total.estimatedCostUsd ?? 0) + (usage.estimatedCostUsd ?? 0),
-            unpricedTurns: total.unpricedTurns + usage.unpricedTurns,
-          };
-  }
-  return total;
-}
 
 /** One-line `48.2K tok · ~$0.31` for dense rows. */
 export function ThreadUsageInline(props: {

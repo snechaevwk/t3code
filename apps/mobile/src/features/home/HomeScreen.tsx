@@ -44,6 +44,7 @@ import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import {
   ThreadListV2PendingRow,
+  ThreadListV2ProjectGroupHeader,
   ThreadListV2Row,
   ThreadListV2SettledShelfHeader,
   ThreadListV2ShowMoreRow,
@@ -60,6 +61,8 @@ import {
   type ThreadListV2ListItem,
 } from "../threads/threadListV2";
 import { useThreadListV2ShelfPreferences } from "../threads/use-thread-list-v2-shelf-preferences";
+import { buildThreadListV2ProjectGrouping } from "../threads/omProjectGroups";
+import { useOmProjectGroupingPreferences } from "../threads/use-om-project-grouping-preferences";
 import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
 import {
   buildHomeProjectScopes,
@@ -386,6 +389,24 @@ export function HomeScreen(props: HomeScreenProps) {
       ),
     [v2ScopeProjects],
   );
+  // OM Code: project headers over the active block, except when the list is
+  // already scoped to one project.
+  const omProjectGrouping = useOmProjectGroupingPreferences();
+  const v2ProjectGrouping = useMemo(
+    () =>
+      omProjectGrouping.groupByProject && v2ScopedProjectGroup === null
+        ? buildThreadListV2ProjectGrouping({
+            scopes: v2ScopeProjects,
+            collapsedKeys: omProjectGrouping.collapsedKeys,
+          })
+        : null,
+    [
+      omProjectGrouping.collapsedKeys,
+      omProjectGrouping.groupByProject,
+      v2ScopeProjects,
+      v2ScopedProjectGroup,
+    ],
+  );
   const v2ScopedProjectKeys = useMemo(
     () =>
       v2ScopedProjectGroup === null
@@ -691,8 +712,10 @@ export function HomeScreen(props: HomeScreenProps) {
         queuedThreadKeys,
         moveAvailability: threadMoveAvailability,
         shelfPreferencesLoading: !shelfPreferencesLoaded,
+        projectGrouping: v2ProjectGrouping,
       }),
     [
+      v2ProjectGrouping,
       nowMinute,
       queuedThreadKeys,
       threadMoveAvailability,
@@ -753,6 +776,14 @@ export function HomeScreen(props: HomeScreenProps) {
             disabled={item.disabled}
             expanded={item.expanded}
             onToggle={toggleSettledShelf}
+          />
+        );
+      }
+      if (item.type === "v2-project-group") {
+        return (
+          <ThreadListV2ProjectGroupHeader
+            item={item}
+            onToggle={omProjectGrouping.toggleGroupCollapsed}
           />
         );
       }
@@ -853,6 +884,7 @@ export function HomeScreen(props: HomeScreenProps) {
       titleRegenerationEnvironmentIds,
       toggleSettledShelf,
       toggleSnoozedShelf,
+      omProjectGrouping.toggleGroupCollapsed,
       v2ProjectTitleByProjectKey,
       props.searchQuery,
     ],

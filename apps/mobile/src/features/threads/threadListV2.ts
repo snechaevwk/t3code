@@ -19,6 +19,7 @@ import {
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import type { ThreadMoveAvailability } from "./threadOrder";
+import { threadStateCountsEqual } from "@t3tools/client-runtime/om-thread-states";
 import {
   groupActiveRowsByProject,
   type ThreadListV2ProjectGrouping,
@@ -368,8 +369,7 @@ export function threadListV2ListItemsAreEqual(
         previous.key === item.key &&
         previous.title === item.title &&
         previous.project === item.project &&
-        previous.count === item.count &&
-        previous.usageLabel === item.usageLabel &&
+        threadStateCountsEqual(previous.stateCounts, item.stateCounts) &&
         previous.collapsed === item.collapsed &&
         previous.showDivider === item.showDivider
       );
@@ -479,7 +479,7 @@ export function buildThreadListV2ListItems(input: {
   const activeItems = threadItems.slice(0, activeEnd);
   const result: ThreadListV2ListItem[] = [
     ...(input.projectGrouping
-      ? groupActiveRowsByProject(activeItems, input.projectGrouping)
+      ? groupActiveRowsByProject(activeItems, input.projectGrouping, resolveThreadListV2Status)
       : activeItems),
     ...pendingItems,
   ];

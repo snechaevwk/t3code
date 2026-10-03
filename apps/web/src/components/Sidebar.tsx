@@ -250,14 +250,14 @@ import {
   type ComposerThreadDraftState,
   type DraftSessionState,
 } from "../composerDraftStore";
-import { sumThreadUsage } from "@t3tools/client-runtime/om-thread-usage";
+import { countThreadStates } from "@t3tools/client-runtime/om-thread-states";
 import { ThreadUsageBreakdown, ThreadUsageInline } from "~/om/threadUsage";
 import {
   groupThreadsByProject,
   placeGroupHeaders,
   useSidebarGroupingStore,
 } from "~/om/sidebarProjectGroups";
-import { SidebarProjectGroupHeader } from "~/om/SidebarProjectGroupHeader";
+import { omThreadState, SidebarProjectGroupHeader } from "~/om/SidebarProjectGroupHeader";
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -3475,8 +3475,9 @@ export default function Sidebar() {
         groupKey={groupKey}
         label={project?.displayName ?? "Project"}
         project={project}
-        threadCount={group?.threads.length ?? 0}
-        usage={sumThreadUsage(group?.threads.map((thread) => thread.usage) ?? [])}
+        stateCounts={countThreadStates(
+          (group?.threads ?? []).map((thread) => omThreadState(resolveSidebarThreadStatus(thread))),
+        )}
         collapsed={omCollapsedGroupKeys[groupKey] === true}
         separated={separated}
         onToggle={omToggleGroupCollapsed}

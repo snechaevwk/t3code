@@ -49,6 +49,10 @@ import {
 import { QueuedMessageIcon } from "./queued-message-icon";
 import type { ThreadListV2ProjectGroupListItem } from "./omProjectGroups";
 import { formatThreadUsageInline } from "@t3tools/client-runtime/om-thread-usage";
+import {
+  describeThreadStateCounts,
+  OM_THREAD_STATE_ORDER,
+} from "@t3tools/client-runtime/om-thread-states";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 
 /**
@@ -234,7 +238,7 @@ export const ThreadListV2ProjectGroupHeader = memo(function ThreadListV2ProjectG
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${item.title}, ${item.count} ${item.count === 1 ? "thread" : "threads"}${item.usageLabel ? `, ${item.usageLabel}` : ""}`}
+      accessibilityLabel={`${item.title}, ${describeThreadStateCounts(item.stateCounts)}`}
       accessibilityHint={`${item.collapsed ? "Expands" : "Collapses"} this project's threads.`}
       accessibilityState={{ expanded: !item.collapsed }}
       onPress={() => props.onToggle(item.groupKey)}
@@ -272,14 +276,20 @@ export const ThreadListV2ProjectGroupHeader = memo(function ThreadListV2ProjectG
       >
         {item.title}
       </Text>
-      {item.usageLabel ? (
-        <Text className={cn("text-xs tabular-nums", mutedText)} style={{ fontFamily: MONO_FONT }}>
-          {item.usageLabel}
-        </Text>
-      ) : null}
-      <Text className={cn("text-xs tabular-nums", mutedText)} style={{ fontFamily: MONO_FONT }}>
-        {item.count}
-      </Text>
+      {OM_THREAD_STATE_ORDER.map((state) =>
+        item.stateCounts[state] > 0 ? (
+          <Text
+            key={state}
+            className={cn(
+              "ml-1.5 text-xs tabular-nums",
+              state === "ready" ? mutedText : STATUS_LABEL_BY_STATUS[state]?.className,
+            )}
+            style={{ fontFamily: MONO_FONT }}
+          >
+            {item.stateCounts[state]}
+          </Text>
+        ) : null,
+      )}
     </Pressable>
   );
 });

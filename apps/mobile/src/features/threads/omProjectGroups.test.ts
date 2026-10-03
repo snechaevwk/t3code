@@ -3,23 +3,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { groupActiveRowsByProject, type ThreadListV2ProjectGrouping } from "./omProjectGroups";
 
-function row(id: string, projectId: string, options: { pinned?: boolean; costUsd?: number } = {}) {
-  const thread = {
-    id,
-    projectId,
-    usage:
-      options.costUsd === undefined
-        ? undefined
-        : {
-            turns: 1,
-            inputTokens: 1_000,
-            cachedInputTokens: 0,
-            outputTokens: 500,
-            reasoningTokens: 0,
-            estimatedCostUsd: options.costUsd,
-            unpricedTurns: 0,
-          },
-  } as unknown as EnvironmentThreadShell;
+function row(id: string, projectId: string, options: { pinned?: boolean } = {}) {
+  const thread = { id, projectId } as unknown as EnvironmentThreadShell;
   return { key: id, item: { thread, pinned: options.pinned === true } };
 }
 
@@ -39,6 +24,7 @@ describe("groupActiveRowsByProject", () => {
     const result = groupActiveRowsByProject(
       [row("t1", "a"), row("t2", "b"), row("t3", "orphan"), row("t4", "a", { pinned: true })],
       grouping(),
+      () => "ready",
     );
     expect(keys(result)).toEqual([
       "t4",
@@ -55,17 +41,17 @@ describe("groupActiveRowsByProject", () => {
     ]);
   });
 
-  it("hides collapsed rows but keeps the header with its count and usage", () => {
+  it("hides collapsed rows but keeps the header with per-state counts", () => {
     const result = groupActiveRowsByProject(
-      [row("t1", "a", { costUsd: 0.5 }), row("t2", "a", { costUsd: 0.25 })],
+      [row("t1", "a"), row("t2", "a")],
       grouping(["group-a"]),
+      (thread) => (thread.id === "t1" ? "approval" : "ready"),
     );
     expect(result).toEqual([
       expect.objectContaining({
         type: "v2-project-group",
-        count: 2,
         collapsed: true,
-        usageLabel: "3K ~$0.75",
+        stateCounts: { approval: 1, input: 0, working: 0, failed: 0, ready: 1 },
         showDivider: false,
       }),
     ]);

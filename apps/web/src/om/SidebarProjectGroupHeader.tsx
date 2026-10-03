@@ -1,21 +1,40 @@
-import type { ThreadUsageSummary } from "@t3tools/contracts";
+import {
+  describeThreadStateCounts,
+  OM_THREAD_STATE_ORDER,
+  type OmThreadState,
+  type OmThreadStateCounts,
+} from "@t3tools/client-runtime/om-thread-states";
 import { ChevronRightIcon, ListIcon, ListTreeIcon } from "lucide-react";
 import { memo } from "react";
 
 import { ProjectFavicon, type ProjectFaviconProject } from "~/components/ProjectFavicon";
+import type { SidebarThreadStatus } from "~/components/Sidebar.logic";
 import { SidebarHeaderIconButton } from "~/components/sidebar/SidebarThreadHeader";
 import { cn } from "~/lib/utils";
 
 import { useSidebarGroupingStore } from "./sidebarProjectGroups";
-import { ThreadUsageInline } from "./threadUsage";
+
+// Same hues as the row status labels (amber approval, indigo input, sky
+// working, red failed); ready recedes.
+const STATE_CLASS_NAME: Record<OmThreadState, string> = {
+  approval: "text-warning-foreground",
+  input: "text-indigo-600 dark:text-indigo-300",
+  working: "text-sky-600 dark:text-sky-400",
+  failed: "text-red-700 dark:text-red-300",
+  ready: "text-sidebar-muted-foreground",
+};
+
+/** Background monitoring counts as working in the group summary. */
+export function omThreadState(status: SidebarThreadStatus): OmThreadState {
+  return status === "monitoring" ? "working" : status;
+}
 
 /** Collapsible project header above a run of Active threads. */
 export const SidebarProjectGroupHeader = memo(function SidebarProjectGroupHeader(props: {
   groupKey: string;
   label: string;
   project: ProjectFaviconProject | null;
-  threadCount: number;
-  usage: ThreadUsageSummary | null;
+  stateCounts: OmThreadStateCounts;
   collapsed: boolean;
   /** Opens with a gap and a rule when other rows sit above it. */
   separated: boolean;
@@ -44,9 +63,18 @@ export const SidebarProjectGroupHeader = memo(function SidebarProjectGroupHeader
         <span className="min-w-0 flex-1 truncate font-semibold uppercase tracking-wide">
           {props.label}
         </span>
-        <ThreadUsageInline usage={props.usage} className="text-2xs" />
-        <span className="shrink-0 font-mono tabular-nums text-sidebar-muted-foreground">
-          {props.threadCount}
+        <span
+          className="flex shrink-0 items-center gap-2 font-mono tabular-nums"
+          title={describeThreadStateCounts(props.stateCounts)}
+          aria-label={describeThreadStateCounts(props.stateCounts)}
+        >
+          {OM_THREAD_STATE_ORDER.map((state) =>
+            props.stateCounts[state] > 0 ? (
+              <span key={state} className={STATE_CLASS_NAME[state]}>
+                {props.stateCounts[state]}
+              </span>
+            ) : null,
+          )}
         </span>
       </button>
     </li>

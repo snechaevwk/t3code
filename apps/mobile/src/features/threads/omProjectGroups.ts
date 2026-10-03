@@ -10,7 +10,11 @@ import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
-import { formatThreadUsageInline, sumThreadUsage } from "@t3tools/client-runtime/om-thread-usage";
+import {
+  countThreadStates,
+  type OmThreadState,
+  type OmThreadStateCounts,
+} from "@t3tools/client-runtime/om-thread-states";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import { scopedProjectKey } from "../../lib/scopedEntities";
@@ -21,9 +25,8 @@ export interface ThreadListV2ProjectGroupListItem {
   readonly groupKey: string;
   readonly title: string;
   readonly project: EnvironmentProject | null;
-  readonly count: number;
-  /** `608K ~$1.03` precomputed so recycled-list equality sees changes. */
-  readonly usageLabel: string | null;
+  /** Threads per state, drawn as colored counts. */
+  readonly stateCounts: OmThreadStateCounts;
   readonly collapsed: boolean;
   /** Gap and rule above every header that follows other rows. */
   readonly showDivider: boolean;
@@ -53,6 +56,7 @@ export function groupActiveRowsByProject<
 >(
   rows: ReadonlyArray<Row>,
   grouping: ThreadListV2ProjectGrouping,
+  stateOf: (thread: EnvironmentThreadShell) => OmThreadState,
 ): Array<Row | ThreadListV2ProjectGroupListItem> {
   const pinned: Row[] = [];
   const ungrouped: Row[] = [];
@@ -80,15 +84,13 @@ export function groupActiveRowsByProject<
   const result: Array<Row | ThreadListV2ProjectGroupListItem> = [...pinned];
   for (const { info, rows: groupRows } of ordered) {
     const collapsed = grouping.collapsedKeys.has(info.key);
-    const usage = sumThreadUsage(groupRows.map((row) => row.item.thread.usage));
     result.push({
       type: "v2-project-group",
       key: `v2-project-group:${info.key}`,
       groupKey: info.key,
       title: info.title,
       project: info.project,
-      count: groupRows.length,
-      usageLabel: usage ? formatThreadUsageInline(usage) : null,
+      stateCounts: countThreadStates(groupRows.map((row) => stateOf(row.item.thread))),
       collapsed,
       showDivider: result.length > 0,
     });

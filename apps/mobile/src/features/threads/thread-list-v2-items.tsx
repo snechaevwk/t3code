@@ -47,6 +47,12 @@ import {
   type ThreadListV2Status,
 } from "./threadListV2";
 import { QueuedMessageIcon } from "./queued-message-icon";
+import type { ThreadListV2ProjectGroupListItem } from "./omProjectGroups";
+import { formatThreadUsageInline } from "@t3tools/client-runtime/om-thread-usage";
+import {
+  describeThreadStateCounts,
+  OM_THREAD_STATE_ORDER,
+} from "@t3tools/client-runtime/om-thread-states";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 
 /**
@@ -217,6 +223,75 @@ export const ThreadListV2SettledShelfHeader = memo(function ThreadListV2SettledS
   props: ThreadListV2ShelfHeaderProps,
 ) {
   return <ThreadListV2ShelfHeader {...props} kind="settled" />;
+});
+
+/** OM Code: project header above that project's active rows; tap collapses. */
+export const ThreadListV2ProjectGroupHeader = memo(function ThreadListV2ProjectGroupHeader(props: {
+  readonly item: ThreadListV2ProjectGroupListItem;
+  readonly pane?: "screen" | "sidebar";
+  readonly onToggle: (groupKey: string) => void;
+}) {
+  const { item } = props;
+  const sidebarPane = props.pane === "sidebar";
+  const mutedText = sidebarPane ? "text-drawer-foreground-muted" : "text-foreground-tertiary";
+  const titleText = sidebarPane ? "text-drawer-foreground" : "text-foreground";
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${item.title}, ${describeThreadStateCounts(item.stateCounts)}`}
+      accessibilityHint={`${item.collapsed ? "Expands" : "Collapses"} this project's threads.`}
+      accessibilityState={{ expanded: !item.collapsed }}
+      onPress={() => props.onToggle(item.groupKey)}
+      className={cn(
+        "mb-1.5 flex-row items-center gap-1.5",
+        sidebarPane ? "px-3" : "px-5",
+        // Space and a rule keep each project's rows apart from the group above.
+        item.showDivider
+          ? cn("mt-5 border-t pt-3", sidebarPane ? "border-drawer-border" : "border-border")
+          : "mt-3",
+      )}
+      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+    >
+      <SymbolView
+        name="chevron.down"
+        size={9}
+        tintColorClassName={sidebarPane ? "accent-drawer-foreground-muted" : "accent-icon-muted"}
+        type="monochrome"
+        style={{ transform: [{ rotate: item.collapsed ? "-90deg" : "0deg" }] }}
+      />
+      {item.project ? (
+        <ProjectFavicon
+          environmentId={item.project.environmentId}
+          faviconPath={item.project.faviconPath}
+          projectIcon={item.project.projectIcon}
+          size={13}
+          projectTitle={item.project.title}
+          workspaceRoot={item.project.workspaceRoot}
+        />
+      ) : null}
+      <Text
+        className={cn("flex-1 text-xs font-t3-bold uppercase", titleText)}
+        style={{ fontFamily: MONO_FONT }}
+        numberOfLines={1}
+      >
+        {item.title}
+      </Text>
+      <Text className={cn("text-xs tabular-nums", mutedText)} style={{ fontFamily: MONO_FONT }}>
+        {OM_THREAD_STATE_ORDER.filter((state) => item.stateCounts[state] > 0).map(
+          (state, index) => (
+            <Text key={state}>
+              {index > 0 ? "/" : null}
+              <Text
+                className={state === "ready" ? mutedText : STATUS_LABEL_BY_STATUS[state]?.className}
+              >
+                {item.stateCounts[state]}
+              </Text>
+            </Text>
+          ),
+        )}
+      </Text>
+    </Pressable>
+  );
 });
 
 export const ThreadListV2ShowMoreRow = memo(function ThreadListV2ShowMoreRow(props: {
@@ -1026,6 +1101,20 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         ) : (
           <View className="flex-1" />
         )}
+        {thread.usage ? (
+          /* OM Code: tokens and estimated cost. */
+          <Text
+            className={cn(
+              "text-xs tabular-nums",
+              selected
+                ? selectedThreadRowColors.mutedForegroundClassName
+                : rowAppearance.mutedForegroundClassName,
+            )}
+            style={{ fontFamily: MONO_FONT }}
+          >
+            {formatThreadUsageInline(thread.usage)}
+          </Text>
+        ) : null}
         {pr ? (
           <View className="flex-row items-center gap-1" accessibilityLabel={pr.accessibilityLabel}>
             <SymbolView

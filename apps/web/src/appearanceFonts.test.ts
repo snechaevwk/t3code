@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { DEFAULT_INTERFACE_FONT_SIZE } from "@t3tools/contracts";
 
 import {
   areFontAdvancesMonospace,
@@ -104,7 +105,7 @@ describe("font size clamping", () => {
 
   it("rounds fractional values and falls back for unusable input", () => {
     expect(clampCodeFontSize(13.4)).toBe(13);
-    expect(clampInterfaceFontSize(Number.NaN)).toBe(16);
+    expect(clampInterfaceFontSize(Number.NaN)).toBe(DEFAULT_INTERFACE_FONT_SIZE);
     expect(clampPromptFontSize(Number.POSITIVE_INFINITY)).toBe(14);
   });
 });

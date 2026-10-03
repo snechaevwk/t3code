@@ -250,6 +250,14 @@ import {
   type ComposerThreadDraftState,
   type DraftSessionState,
 } from "../composerDraftStore";
+import { countThreadStates } from "@t3tools/client-runtime/om-thread-states";
+import { ThreadUsageBreakdown, ThreadUsageInline } from "~/om/threadUsage";
+import {
+  groupThreadsByProject,
+  placeGroupHeaders,
+  useSidebarGroupingStore,
+} from "~/om/sidebarProjectGroups";
+import { omThreadState, SidebarProjectGroupHeader } from "~/om/SidebarProjectGroupHeader";
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -415,6 +423,11 @@ function SidebarThreadTooltip({
               <div className="min-w-0 truncate text-foreground/75">
                 {terminalProcessLabel(terminalProcessCount)}
               </div>
+            </div>
+          ) : null}
+          {thread.usage ? (
+            <div className="border-t border-border/60 pt-1.5">
+              <ThreadUsageBreakdown usage={thread.usage} />
             </div>
           ) : null}
           {thread.session?.lastError ? (
@@ -1968,6 +1981,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   <span className="text-diff-deletion-foreground">−{diff.deletions}</span>
                 </span>
               ) : null}
+              <ThreadUsageInline usage={thread.usage} />
               <span
                 aria-hidden
                 className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
@@ -2381,6 +2395,39 @@ export default function Sidebar() {
       ),
     [projectGroups],
   );
+  // OM Code: Active threads grouped under project headers.
+  const omGroupByProject = useSidebarGroupingStore((state) => state.groupByProject);
+  const omCollapsedGroupKeys = useSidebarGroupingStore((state) => state.collapsedGroupKeys);
+  const omToggleGroupCollapsed = useSidebarGroupingStore((state) => state.toggleGroupCollapsed);
+  const omProjectGroupByProjectKey = useMemo(
+    () =>
+      new Map(
+        projectGroups.flatMap((group) =>
+          group.memberProjects.map(
+            (project) => [`${project.environmentId}:${project.id}` as string, group] as const,
+          ),
+        ),
+      ),
+    [projectGroups],
+  );
+  const omGroupKeyOf = useCallback(
+    (thread: EnvironmentThreadShell) => {
+      const projectKey = `${thread.environmentId}:${thread.projectId}`;
+      return omProjectGroupByProjectKey.get(projectKey)?.projectKey ?? projectKey;
+    },
+    [omProjectGroupByProjectKey],
+  );
+  const omGroupOrder = useMemo(
+    () => projectGroups.map((group) => group.projectKey),
+    [projectGroups],
+  );
+  const omGroupActiveThreads = useCallback(
+    (list: EnvironmentThreadShell[]) =>
+      omGroupByProject
+        ? groupThreadsByProject(list, omGroupKeyOf, omGroupOrder).flatMap((group) => group.threads)
+        : list,
+    [omGroupByProject, omGroupKeyOf, omGroupOrder],
+  );
 
   const nowMinute = useNowMinute();
   // Snooze wake times are second-precise, so classifying with the quantized
@@ -2643,7 +2690,7 @@ export default function Sidebar() {
             }),
       draggableThreadKeys: draggable,
       activeReorderableThreadKeys: activeReorderable,
-      activeThreads:
+      activeThreads: omGroupActiveThreads(
         optimisticDrop?.section !== "active" || optimisticDrop.order === null
           ? sortedActive
           : orderItemsByPreferredIds({
@@ -2651,6 +2698,7 @@ export default function Sidebar() {
               preferredIds: optimisticDrop.order,
               getId: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
             }),
+      ),
       // Soonest wake first: "what comes back next" is the shelf's question.
       snoozedThreads: snoozed.toSorted(
         (left, right) =>
@@ -2660,7 +2708,15 @@ export default function Sidebar() {
       settledThreads: sortSettledThreads(settled),
       snoozeNow: preciseNow,
     };
-  }, [nowMinute, optimisticDrop, scopedProjectKeys, serverConfigs, snoozeWakeTick, threads]);
+  }, [
+    nowMinute,
+    omGroupActiveThreads,
+    optimisticDrop,
+    scopedProjectKeys,
+    serverConfigs,
+    snoozeWakeTick,
+    threads,
+  ]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
@@ -3385,6 +3441,49 @@ export default function Sidebar() {
     },
     [sectionByThreadKey],
   );
+  const omActiveGrouping = useMemo(() => {
+    if (!omGroupByProject) return null;
+    const groups = groupThreadsByProject(activeThreads, omGroupKeyOf, omGroupOrder);
+    const keyOf = (thread: EnvironmentThreadShell) =>
+      scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+    // The open thread stays visible inside a collapsed group.
+    const isVisible = (thread: EnvironmentThreadShell) =>
+      omCollapsedGroupKeys[omGroupKeyOf(thread)] !== true || keyOf(thread) === routeThreadKey;
+    return {
+      groupByKey: new Map(groups.map((group) => [group.groupKey, group])),
+      visibleActiveThreads: activeThreads.filter(isVisible),
+      ...placeGroupHeaders(groups, isVisible, keyOf),
+    };
+  }, [
+    activeThreads,
+    omCollapsedGroupKeys,
+    omGroupByProject,
+    omGroupKeyOf,
+    omGroupOrder,
+    routeThreadKey,
+  ]);
+  const renderOmGroupHeader = (groupKey: string, separated: boolean) => {
+    const group = omActiveGrouping?.groupByKey.get(groupKey);
+    const project = group?.threads[0]
+      ? (omProjectGroupByProjectKey.get(
+          `${group.threads[0].environmentId}:${group.threads[0].projectId}`,
+        ) ?? null)
+      : null;
+    return (
+      <SidebarProjectGroupHeader
+        key={`om-group:${groupKey}`}
+        groupKey={groupKey}
+        label={project?.displayName ?? "Project"}
+        project={project}
+        stateCounts={countThreadStates(
+          (group?.threads ?? []).map((thread) => omThreadState(resolveSidebarThreadStatus(thread))),
+        )}
+        collapsed={omCollapsedGroupKeys[groupKey] === true}
+        separated={separated}
+        onToggle={omToggleGroupCollapsed}
+      />
+    );
+  };
   // Include every visible row in the measured order. Older servers disable
   // pickup on their rows without changing where those rows render.
   const sidebarListItems = useMemo((): readonly SidebarListItem[] => {
@@ -3409,7 +3508,7 @@ export default function Sidebar() {
     const pinnedRows = rowsOf(pinnedThreads, "pinned");
     items.push(...pinnedRows);
     items.push({ kind: "marker", marker: "pinned-divider" });
-    const activeRows = rowsOf(activeThreads, "active");
+    const activeRows = rowsOf(omActiveGrouping?.visibleActiveThreads ?? activeThreads, "active");
     items.push({ kind: "marker", marker: "active-placeholder" });
     items.push(...activeRows);
     if (snoozedThreads.length > 0) {
@@ -3423,6 +3522,7 @@ export default function Sidebar() {
     return items;
   }, [
     activeThreads,
+    omActiveGrouping,
     pinnedThreads,
     renderedSettledThreads,
     settledThreads.length,
@@ -4844,10 +4944,31 @@ export default function Sidebar() {
                           onNavigateToDraft={navigateToDraft}
                         />,
                       ];
+                      let omTrailingHeadersRendered = false;
+                      // Group headers after any other row get a separating gap.
+                      let omRowsAbove = false;
                       for (const item of sidebarListItems) {
                         if (item.kind === "thread") {
+                          if (item.section === "active") {
+                            for (const groupKey of omActiveGrouping?.beforeThread.get(item.key) ??
+                              []) {
+                              items.push(renderOmGroupHeader(groupKey, omRowsAbove));
+                              omRowsAbove = true;
+                            }
+                          }
                           items.push(renderThreadRow(threadByKey.get(item.key)!, item.section));
+                          omRowsAbove = true;
                           continue;
+                        }
+                        if (
+                          !omTrailingHeadersRendered &&
+                          (item.marker === "snoozed-header" || item.marker === "settled-header")
+                        ) {
+                          omTrailingHeadersRendered = true;
+                          for (const groupKey of omActiveGrouping?.trailing ?? []) {
+                            items.push(renderOmGroupHeader(groupKey, omRowsAbove));
+                            omRowsAbove = true;
+                          }
                         }
                         switch (item.marker) {
                           case "pinned-header":

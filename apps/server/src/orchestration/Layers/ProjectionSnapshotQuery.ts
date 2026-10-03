@@ -27,6 +27,7 @@ import {
   type OrchestrationSession,
   type OrchestrationThreadActivity,
   type OrchestrationThreadShell,
+  type ThreadUsageSummary,
   ModelSelection,
   ProjectId,
   ThreadLinkedPullRequest,
@@ -55,6 +56,7 @@ import {
 } from "../../persistence/Errors.ts";
 import { ThreadBackgroundLivenessService } from "../ThreadBackgroundLiveness.ts";
 import { ThreadPlanProgressService } from "../ThreadPlanProgress.ts";
+import * as OmThreadUsage from "../../om/ThreadUsage.ts";
 import { ProjectionProject } from "../../persistence/Services/ProjectionProjects.ts";
 import { ProjectionState } from "../../persistence/Services/ProjectionState.ts";
 import { ProjectionThreadActivity } from "../../persistence/Services/ProjectionThreadActivities.ts";
@@ -494,6 +496,15 @@ function toPersistenceSqlOrDecodeError(sqlOperation: string, decodeOperation: st
 const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const threadBackgroundLiveness = yield* ThreadBackgroundLivenessService;
   const threadPlanProgress = yield* ThreadPlanProgressService;
+  // OM Code: per-thread token/cost rollup, absent when the service is not provided.
+  const omThreadUsage = yield* Effect.serviceOption(OmThreadUsage.ThreadUsageService);
+  const omUsageByThread = (threadIds: ReadonlyArray<string>) =>
+    Option.isSome(omThreadUsage)
+      ? omThreadUsage.value.summarize(threadIds)
+      : Effect.succeed<ReadonlyMap<string, ThreadUsageSummary>>(new Map());
+  // Omitted rather than null when a thread has no recorded usage.
+  const omUsageField = (usage: ThreadUsageSummary | undefined) =>
+    usage === undefined ? {} : { usage };
   const sql = yield* SqlClient.SqlClient;
   const repositoryIdentityResolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const repositoryIdentityResolutionConcurrency = 4;
@@ -2756,6 +2767,9 @@ pending_approval_requests AS (
                 sessionRows.map((row) => [row.threadId, mapSessionRow(row)] as const),
               );
               const pullRequestsByThread = groupPullRequestRowsByThread(pullRequestRows);
+              const usageByThread = yield* omUsageByThread(
+                threadRows.filter((row) => row.deletedAt === null).map((row) => row.threadId),
+              );
 
               // Built from schema-decoded rows, so no second decode here. The HTTP
               // and RPC layers encode it against OrchestrationShellSnapshot on the
@@ -2810,6 +2824,7 @@ pending_approval_requests AS (
                           row.threadId,
                         ),
                         planProgress: threadPlanProgress.getThreadPlanProgress(row.threadId),
+                        ...omUsageField(usageByThread.get(row.threadId)),
                       } satisfies OrchestrationThreadShell)
                     : Result.failVoid,
                 ),
@@ -3345,6 +3360,9 @@ pending_approval_requests AS (
           threadRow.value.threadId,
         ),
         planProgress: threadPlanProgress.getThreadPlanProgress(threadRow.value.threadId),
+        ...omUsageField(
+          (yield* omUsageByThread([threadRow.value.threadId])).get(threadRow.value.threadId),
+        ),
       } satisfies OrchestrationThreadShell);
     });
 

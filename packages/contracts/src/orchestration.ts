@@ -24,6 +24,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { ThreadUsageSummary } from "./omThreadUsage.ts";
 import {
   PullRequestActor,
   PullRequestChecksState,
@@ -940,6 +941,8 @@ export const OrchestrationThreadShell = Schema.Struct({
       }),
     ),
   ),
+  // OM Code: token and estimated cost totals. Optional so upstream servers interop.
+  usage: Schema.optional(Schema.NullOr(ThreadUsageSummary)),
 });
 export type OrchestrationThreadShell = typeof OrchestrationThreadShell.Type;
 

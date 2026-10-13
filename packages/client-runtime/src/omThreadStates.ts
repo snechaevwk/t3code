@@ -13,6 +13,16 @@ export const OM_THREAD_STATE_ORDER: ReadonlyArray<OmThreadState> = [
   "ready",
 ];
 
+/**
+ * Maps a row status onto a header bucket. Waiting on background work counts
+ * as working and a usage limit as failed: each needs that bucket's attention.
+ */
+export function omThreadStateOf(status: OmThreadState | "waiting" | "limited"): OmThreadState {
+  if (status === "waiting") return "working";
+  if (status === "limited") return "failed";
+  return status;
+}
+
 export type OmThreadStateCounts = Readonly<Record<OmThreadState, number>>;
 
 export function countThreadStates(states: Iterable<OmThreadState>): OmThreadStateCounts {

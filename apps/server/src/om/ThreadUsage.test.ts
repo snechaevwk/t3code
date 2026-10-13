@@ -1,14 +1,19 @@
-import { ThreadId } from "@t3tools/contracts";
+import {
+  ModelSelection,
+  type OrchestrationV2ThreadShell,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import { runMigrations } from "../persistence/Migrations.ts";
 import type { RateTable } from "../usage/usagePricing.ts";
 import * as ThreadUsage from "./ThreadUsage.ts";
 
-const layer = it.layer(ThreadUsage.layer.pipe(Layer.provideMerge(SqlitePersistenceMemory)));
+const layer = it.layer(NodeSqliteClient.layer({ filename: ":memory:" }));
 
 const record = (overrides: Partial<ThreadUsage.TurnUsageRecord> = {}) => ({
   model: "test-model",
@@ -20,38 +25,68 @@ const record = (overrides: Partial<ThreadUsage.TurnUsageRecord> = {}) => ({
   ...overrides,
 });
 
-layer("ThreadUsageService", (it) => {
-  it.effect("loads persisted turns once and does not double count a recorded turn", () =>
+const shellFor = (threadId: ThreadId) =>
+  ({
+    id: threadId,
+    modelSelection: ModelSelection.make({
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "thread-model",
+    }),
+  }) as OrchestrationV2ThreadShell;
+
+layer("makeShellUsageEnricher", (it) => {
+  it.effect("sums each thread's provider turns, taking the model from the turn's run", () =>
     Effect.gen(function* () {
-      const service = yield* ThreadUsage.ThreadUsageService;
+      yield* runMigrations();
       const sql = yield* SqlClient.SqlClient;
-      const threadId = ThreadId.make("thread-usage-load");
-      const payload = `{"${ThreadUsage.TURN_USAGE_PAYLOAD_KEY}":{"model":"test-model","inputTokens":1000,"cachedInputTokens":400,"cacheCreationTokens":100,"outputTokens":200,"reasoningTokens":50}}`;
-
+      const threadId = ThreadId.make("thread-usage");
+      const usage = (output: number) =>
+        JSON.stringify({
+          turnTokenUsage: {
+            usageStatus: "complete",
+            usageScope: "main_agent",
+            hasSubagents: false,
+            inputTokens: 1_000,
+            cachedInputTokens: 400,
+            outputTokens: output,
+          },
+        });
       yield* sql`
-        INSERT INTO projection_thread_activities (
-          activity_id, thread_id, turn_id, tone, kind, summary, payload_json, sequence, created_at
-        )
-        VALUES
-          ('turn-1', ${threadId}, NULL, 'info', 'context-window.updated', 'usage', ${payload}, 1,
-            '2026-03-01T00:00:00.000Z'),
-          ('meter', ${threadId}, NULL, 'info', 'context-window.updated', 'meter',
-            '{"usedTokens":12}', 2, '2026-03-01T00:00:01.000Z')
+        INSERT INTO orchestration_v2_projection_runs
+          (run_id, thread_id, ordinal, provider, status, requested_at, payload_json)
+        VALUES ('run-1', ${threadId}, 1, 'codex', 'completed', '2026-01-01',
+          '{"modelSelection":{"instanceId":"codex","model":"run-model"}}')
       `;
-      // Recorded by ingestion before its thread was ever summarized.
-      service.recordTurn({ threadId, turnKey: "turn-1", record: record() });
-      service.recordTurn({ threadId, turnKey: "turn-2", record: record({ outputTokens: 300 }) });
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_run_attempts
+          (attempt_id, thread_id, run_id, attempt_ordinal, root_node_id, provider,
+           provider_thread_id, status, payload_json)
+        VALUES ('attempt-1', ${threadId}, 'run-1', 1, 'node-1', 'codex', 'pt-1', 'completed', '{}')
+      `;
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_provider_turns
+          (provider_turn_id, thread_id, provider_thread_id, node_id, run_attempt_id, ordinal,
+           status, payload_json)
+        VALUES
+          ('turn-1', ${threadId}, 'pt-1', 'node-1', 'attempt-1', 1, 'completed', ${usage(200)}),
+          ('turn-2', ${threadId}, 'pt-1', 'node-2', NULL, 2, 'completed', ${usage(300)}),
+          ('turn-3', ${threadId}, 'pt-1', 'node-3', NULL, 3, 'running', '{}')
+      `;
 
-      const summary = (yield* service.summarize([threadId])).get(threadId);
-      assert.deepStrictEqual(summary, {
+      const enricher = yield* ThreadUsage.makeShellUsageEnricher;
+      const shell = yield* enricher.enrichShell(shellFor(threadId));
+      assert.deepStrictEqual(shell?.usage, {
         turns: 2,
         inputTokens: 2_000,
         cachedInputTokens: 800,
         outputTokens: 500,
-        reasoningTokens: 100,
+        reasoningTokens: 0,
         estimatedCostUsd: null,
         unpricedTurns: 2,
       });
+
+      const untouched = yield* enricher.enrichShell(shellFor(ThreadId.make("no-turns")));
+      assert.strictEqual(untouched?.usage, undefined);
     }),
   );
 });
@@ -65,7 +100,8 @@ it("prices each turn from uncached, cached, cache-write and output tokens", () =
         outputCostPerToken: 10,
         cacheReadCostPerToken: 0.1,
         cacheCreationCostPerToken: 2,
-        fastMultiplier: 1,
+        fast: null,
+        ultrafast: null,
       },
     ],
   ]);
@@ -77,4 +113,11 @@ it("prices each turn from uncached, cached, cache-write and output tokens", () =
   assert.strictEqual(summary.estimatedCostUsd, 500 + 40 + 200 + 2_000);
   assert.strictEqual(summary.unpricedTurns, 1);
   assert.strictEqual(summary.turns, 2);
+});
+
+it("skips turns that reported no totals", () => {
+  assert.strictEqual(
+    ThreadUsage.turnUsageRecordFromJson('{"usageStatus":"unavailable"}', "model"),
+    null,
+  );
 });

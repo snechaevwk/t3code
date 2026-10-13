@@ -1,43 +1,32 @@
 /**
- * ThreadUsageService - per-thread token and estimated cost rollups for the
- * sidebar and thread header (OM Code fork feature).
+ * Per-thread token and estimated cost rollups for the sidebar and thread
+ * header (OM Code fork feature).
  *
- * Each finished turn's normalized `tokenUsage` is persisted as a thread
- * activity, so totals survive restarts without a schema migration (a fork
- * migration id would block upstream's later migrations). The activity rides
- * the `context-window.updated` kind with no `usedTokens`: every client,
- * including upstream builds, already hides that kind from the timeline and
- * skips rows without `usedTokens` when reading the context meter.
+ * The orchestrator already persists each provider turn's normalized
+ * `turnTokenUsage` in its projection, so totals are read from there: no
+ * extra events or tables, and nothing for upstream migrations to collide
+ * with. The model comes from the turn's run, falling back to the thread's
+ * current selection. Cost is priced at read time from `UsageService`'s rate
+ * table, so a table that loads later (or a new price override) applies to
+ * old turns.
  *
- * Totals are cached in memory per thread. A thread's turns are read from SQL
- * the first time its shell is built, then kept current by ingestion. Entries
- * are keyed by turn, so a turn recorded while its thread is loading is never
- * counted twice. Cost is priced at read time from `UsageService`'s rate table
- * so a table that loads later (or a new price override) applies to old turns.
+ * Shells reach clients through `ThreadManagementService`, which runs them
+ * through {@link makeShellUsageEnricher}. Every piece is optional: without a
+ * SQL client or usage service the shells simply carry no `usage`.
  *
- * Optional at every call site (`Effect.serviceOption`): suites that build the
- * orchestration layers without it simply get no `usage` field.
- *
- * @module ThreadUsageService
+ * @module ThreadUsage
  */
-import {
-  EventId,
-  type OrchestrationThreadActivity,
-  type ProviderRuntimeEvent,
-  type ThreadUsageSummary,
+import type {
+  OrchestrationV2ThreadShell,
+  OrchestrationV2ThreadShellSnapshot,
+  ThreadUsageSummary,
 } from "@t3tools/contracts";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { UsageService, type CurrentRateTables } from "../usage/UsageService.ts";
 import { priceUsage } from "../usage/usagePricing.ts";
-
-export const TURN_USAGE_PAYLOAD_KEY = "omTurnUsage";
-const TURN_USAGE_ACTIVITY_KIND = "context-window.updated";
 
 export interface TurnUsageRecord {
   readonly model: string;
@@ -54,60 +43,31 @@ function nonNegativeInt(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
-/** Reads a persisted record back, rejecting anything malformed. */
-export function decodeTurnUsageRecord(payload: unknown): TurnUsageRecord | null {
-  if (typeof payload !== "object" || payload === null) return null;
-  const raw = (payload as Record<string, unknown>)[TURN_USAGE_PAYLOAD_KEY];
-  if (typeof raw !== "object" || raw === null) return null;
-  const record = raw as Record<string, unknown>;
-  const model = typeof record.model === "string" ? record.model.trim() : "";
-  const inputTokens = nonNegativeInt(record.inputTokens);
-  const outputTokens = nonNegativeInt(record.outputTokens);
-  if (model.length === 0 || inputTokens === null || outputTokens === null) return null;
+/**
+ * A stored `turnTokenUsage` as a record, or null when the provider reported
+ * no input and output totals for the turn.
+ */
+export function turnUsageRecordFromJson(json: string, model: string): TurnUsageRecord | null {
+  let usage: unknown;
+  try {
+    usage = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (typeof usage !== "object" || usage === null) return null;
+  const fields = usage as Record<string, unknown>;
+  const inputTokens = nonNegativeInt(fields.inputTokens);
+  const outputTokens = nonNegativeInt(fields.outputTokens);
+  if (inputTokens === null || outputTokens === null || inputTokens + outputTokens === 0) {
+    return null;
+  }
   return {
     model,
     inputTokens,
-    cachedInputTokens: nonNegativeInt(record.cachedInputTokens) ?? 0,
-    cacheCreationTokens: nonNegativeInt(record.cacheCreationTokens) ?? 0,
+    cachedInputTokens: nonNegativeInt(fields.cachedInputTokens) ?? 0,
+    cacheCreationTokens: nonNegativeInt(fields.cacheCreationTokens) ?? 0,
     outputTokens,
-    reasoningTokens: nonNegativeInt(record.reasoningTokens) ?? 0,
-  };
-}
-
-/**
- * The record for a finished turn, or null when the provider reported no
- * input and output totals for it.
- */
-export function turnUsageRecordFromEvent(
-  event: ProviderRuntimeEvent,
-  model: string,
-): TurnUsageRecord | null {
-  if (event.type !== "turn.completed" && event.type !== "turn.aborted") return null;
-  const usage = event.payload.tokenUsage;
-  if (usage?.inputTokens === undefined || usage.outputTokens === undefined) return null;
-  if (usage.inputTokens + usage.outputTokens === 0) return null;
-  return {
-    model,
-    inputTokens: usage.inputTokens,
-    cachedInputTokens: usage.cachedInputTokens ?? 0,
-    cacheCreationTokens: usage.cacheCreationTokens ?? 0,
-    outputTokens: usage.outputTokens,
-    reasoningTokens: usage.reasoningTokens ?? 0,
-  };
-}
-
-export function turnUsageActivity(
-  event: ProviderRuntimeEvent,
-  record: TurnUsageRecord,
-): Omit<OrchestrationThreadActivity, "sequence"> {
-  return {
-    id: EventId.make(`om-turn-usage:${event.eventId}`),
-    createdAt: event.createdAt,
-    tone: "info",
-    kind: TURN_USAGE_ACTIVITY_KIND,
-    summary: "Turn usage recorded",
-    payload: { [TURN_USAGE_PAYLOAD_KEY]: record },
-    turnId: (event.turnId ?? null) as OrchestrationThreadActivity["turnId"],
+    reasoningTokens: nonNegativeInt(fields.reasoningTokens) ?? 0,
   };
 }
 
@@ -143,7 +103,7 @@ export function summarizeTurnUsage(
           outputTokens: record.outputTokens,
           reasoningTokens: record.reasoningTokens,
         },
-        fast: false,
+        speed: "standard",
         reportedCostUsd: null,
       },
       tables.overrides,
@@ -165,100 +125,102 @@ export function summarizeTurnUsage(
   };
 }
 
-export class ThreadUsageService extends Context.Service<
-  ThreadUsageService,
-  {
-    /** Usage per thread id. Threads without recorded turns are absent. */
-    readonly summarize: (
-      threadIds: ReadonlyArray<string>,
-    ) => Effect.Effect<ReadonlyMap<string, ThreadUsageSummary>>;
-    readonly recordTurn: (input: {
-      readonly threadId: string;
-      readonly turnKey: string;
-      readonly record: TurnUsageRecord;
-    }) => void;
-  }
->()("t3/om/ThreadUsage/ThreadUsageService") {}
-
 const LOAD_CHUNK_SIZE = 500;
-const decodePayloadJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 const EMPTY_TABLES: CurrentRateTables = { rates: new Map(), overrides: new Map() };
 
-export const make = Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient;
+interface TurnUsageRow {
+  readonly threadId: string;
+  readonly usage: string;
+  readonly model: string | null;
+}
+
+/**
+ * Builds the functions that attach `usage` to shells. Resolved once when the
+ * owning service is built; absent services turn them into identities.
+ */
+export const makeShellUsageEnricher = Effect.gen(function* () {
+  const sqlOption = yield* Effect.serviceOption(SqlClient.SqlClient);
   const usageService = yield* Effect.serviceOption(UsageService);
 
-  const turnsByThreadId = new Map<string, Map<string, TurnUsageRecord>>();
-  // Turns recorded before their thread was loaded; merged in by key on load.
-  const pendingByThreadId = new Map<string, Map<string, TurnUsageRecord>>();
+  const readRows = (sql: SqlClient.SqlClient, threadIds: ReadonlyArray<string>) =>
+    Effect.forEach(
+      Array.from({ length: Math.ceil(threadIds.length / LOAD_CHUNK_SIZE) }, (_, index) =>
+        threadIds.slice(index * LOAD_CHUNK_SIZE, (index + 1) * LOAD_CHUNK_SIZE),
+      ),
+      (chunk) => sql<TurnUsageRow>`
+        SELECT
+          turns.thread_id AS "threadId",
+          json_extract(turns.payload_json, '$.turnTokenUsage') AS "usage",
+          json_extract(runs.payload_json, '$.modelSelection.model') AS "model"
+        FROM orchestration_v2_projection_provider_turns AS turns
+        LEFT JOIN orchestration_v2_projection_run_attempts AS attempts
+          ON attempts.attempt_id = turns.run_attempt_id
+        LEFT JOIN orchestration_v2_projection_runs AS runs
+          ON runs.run_id = attempts.run_id
+        WHERE ${sql.in("turns.thread_id", chunk)}
+          AND json_extract(turns.payload_json, '$.turnTokenUsage') IS NOT NULL
+      `,
+    ).pipe(Effect.map((chunks) => chunks.flat()));
 
-  const loadThreads = (threadIds: ReadonlyArray<string>) =>
+  const summarize = (shells: ReadonlyArray<OrchestrationV2ThreadShell>) =>
     Effect.gen(function* () {
-      for (let start = 0; start < threadIds.length; start += LOAD_CHUNK_SIZE) {
-        const chunk = threadIds.slice(start, start + LOAD_CHUNK_SIZE);
-        const rows = yield* sql<{
-          readonly threadId: string;
-          readonly activityId: string;
-          readonly payload: string;
-        }>`
-          SELECT thread_id AS "threadId", activity_id AS "activityId", payload_json AS "payload"
-          FROM projection_thread_activities
-          WHERE ${sql.in("thread_id", chunk)}
-            AND kind = ${TURN_USAGE_ACTIVITY_KIND}
-            AND json_extract(payload_json, ${`$.${TURN_USAGE_PAYLOAD_KEY}`}) IS NOT NULL
-        `;
-        const loaded = new Map<string, Map<string, TurnUsageRecord>>(
-          chunk.map((threadId) => [threadId, new Map()]),
-        );
-        for (const row of rows) {
-          const payload = decodePayloadJson(row.payload);
-          if (Option.isNone(payload)) continue;
-          const record = decodeTurnUsageRecord(payload.value);
-          if (record !== null) loaded.get(row.threadId)?.set(row.activityId, record);
-        }
-        for (const [threadId, turns] of loaded) {
-          for (const [turnKey, record] of pendingByThreadId.get(threadId) ?? []) {
-            turns.set(turnKey, record);
-          }
-          pendingByThreadId.delete(threadId);
-          if (!turnsByThreadId.has(threadId)) turnsByThreadId.set(threadId, turns);
-        }
+      const summaries = new Map<string, ThreadUsageSummary>();
+      if (Option.isNone(sqlOption) || shells.length === 0) return summaries;
+      const rows = yield* readRows(
+        sqlOption.value,
+        shells.map((shell) => shell.id),
+      );
+      const fallbackModelByThread = new Map(
+        shells.map((shell) => [shell.id as string, shell.modelSelection.model]),
+      );
+      const recordsByThread = new Map<string, TurnUsageRecord[]>();
+      for (const row of rows) {
+        const model = row.model ?? fallbackModelByThread.get(row.threadId);
+        if (model === undefined) continue;
+        const record = turnUsageRecordFromJson(row.usage, model);
+        if (record === null) continue;
+        const records = recordsByThread.get(row.threadId);
+        if (records) records.push(record);
+        else recordsByThread.set(row.threadId, [record]);
       }
-    });
-
-  const summarize = (threadIds: ReadonlyArray<string>) =>
-    Effect.gen(function* () {
-      const missing = threadIds.filter((threadId) => !turnsByThreadId.has(threadId));
-      if (missing.length > 0) {
-        yield* loadThreads(missing).pipe(
-          Effect.catchCause((cause) => Effect.logWarning("om thread usage load failed", { cause })),
-        );
-      }
+      if (recordsByThread.size === 0) return summaries;
       const tables = Option.isSome(usageService)
         ? yield* usageService.value.currentRateTables
         : EMPTY_TABLES;
-      const summaries = new Map<string, ThreadUsageSummary>();
-      for (const threadId of threadIds) {
-        const turns = turnsByThreadId.get(threadId);
-        if (turns === undefined || turns.size === 0) continue;
-        summaries.set(threadId, summarizeTurnUsage(turns.values(), tables));
+      for (const [threadId, records] of recordsByThread) {
+        summaries.set(threadId, summarizeTurnUsage(records, tables));
       }
-      return summaries as ReadonlyMap<string, ThreadUsageSummary>;
-    });
+      return summaries;
+    }).pipe(
+      // Usage is decoration: a failed read must never block the shell.
+      Effect.catchCause((cause) =>
+        Effect.logWarning("om thread usage read failed", { cause }).pipe(
+          Effect.as(new Map<string, ThreadUsageSummary>()),
+        ),
+      ),
+    );
 
-  const recordTurn: ThreadUsageService["Service"]["recordTurn"] = ({
-    threadId,
-    turnKey,
-    record,
-  }) => {
-    const target =
-      turnsByThreadId.get(threadId) ??
-      pendingByThreadId.get(threadId) ??
-      pendingByThreadId.set(threadId, new Map()).get(threadId)!;
-    target.set(turnKey, record);
+  const withUsage = (
+    shell: OrchestrationV2ThreadShell,
+    summaries: ReadonlyMap<string, ThreadUsageSummary>,
+  ): OrchestrationV2ThreadShell => {
+    const usage = summaries.get(shell.id);
+    return usage === undefined ? shell : { ...shell, usage };
   };
 
-  return ThreadUsageService.of({ summarize, recordTurn });
-});
+  const enrichShell = (shell: OrchestrationV2ThreadShell | null) =>
+    shell === null
+      ? Effect.succeed(null)
+      : summarize([shell]).pipe(Effect.map((summaries) => withUsage(shell, summaries)));
 
-export const layer = Layer.effect(ThreadUsageService, make);
+  const enrichSnapshot = (snapshot: OrchestrationV2ThreadShellSnapshot) =>
+    summarize([...snapshot.threads, ...snapshot.archivedThreads]).pipe(
+      Effect.map((summaries): OrchestrationV2ThreadShellSnapshot => ({
+        ...snapshot,
+        threads: snapshot.threads.map((shell) => withUsage(shell, summaries)),
+        archivedThreads: snapshot.archivedThreads.map((shell) => withUsage(shell, summaries)),
+      })),
+    );
+
+  return { enrichShell, enrichSnapshot };
+});

@@ -8,8 +8,8 @@ import { ChevronRightIcon, ListIcon, ListTreeIcon } from "lucide-react";
 import { memo } from "react";
 
 import { ProjectFavicon, type ProjectFaviconProject } from "~/components/ProjectFavicon";
-import type { SidebarThreadStatus } from "~/components/Sidebar.logic";
 import { SidebarHeaderIconButton } from "~/components/sidebar/SidebarThreadHeader";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 
 import { useSidebarGroupingStore } from "./sidebarProjectGroups";
@@ -23,11 +23,6 @@ const STATE_CLASS_NAME: Record<OmThreadState, string> = {
   failed: "text-red-700 dark:text-red-300",
   ready: "text-sidebar-muted-foreground",
 };
-
-/** Background monitoring counts as working in the group summary. */
-export function omThreadState(status: SidebarThreadStatus): OmThreadState {
-  return status === "monitoring" ? "working" : status;
-}
 
 /** Collapsible project header above a run of Active threads. */
 export const SidebarProjectGroupHeader = memo(function SidebarProjectGroupHeader(props: {
@@ -51,7 +46,7 @@ export const SidebarProjectGroupHeader = memo(function SidebarProjectGroupHeader
         type="button"
         aria-expanded={!props.collapsed}
         onClick={() => onToggle(groupKey)}
-        className="flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-sm px-1.5 text-left text-xs text-sidebar-foreground outline-hidden hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-sm px-1.5 text-left text-xs text-sidebar-foreground outline-hidden hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <ChevronRightIcon
           aria-hidden
@@ -63,20 +58,26 @@ export const SidebarProjectGroupHeader = memo(function SidebarProjectGroupHeader
         <span className="min-w-0 flex-1 truncate font-semibold uppercase tracking-wide">
           {props.label}
         </span>
-        <span
-          className="flex shrink-0 items-center font-mono tabular-nums"
-          title={describeThreadStateCounts(props.stateCounts)}
-          aria-label={describeThreadStateCounts(props.stateCounts)}
-        >
-          {OM_THREAD_STATE_ORDER.filter((state) => props.stateCounts[state] > 0).map(
-            (state, index) => (
-              <span key={state}>
-                {index > 0 ? <span className="text-sidebar-muted-foreground/60">/</span> : null}
-                <span className={STATE_CLASS_NAME[state]}>{props.stateCounts[state]}</span>
-              </span>
-            ),
-          )}
-        </span>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span
+                className="flex shrink-0 items-center font-mono tabular-nums"
+                aria-label={describeThreadStateCounts(props.stateCounts)}
+              />
+            }
+          >
+            {OM_THREAD_STATE_ORDER.filter((state) => props.stateCounts[state] > 0).map(
+              (state, index) => (
+                <span key={state}>
+                  {index > 0 ? <span className="text-sidebar-muted-foreground/60">/</span> : null}
+                  <span className={STATE_CLASS_NAME[state]}>{props.stateCounts[state]}</span>
+                </span>
+              ),
+            )}
+          </TooltipTrigger>
+          <TooltipPopup side="top">{describeThreadStateCounts(props.stateCounts)}</TooltipPopup>
+        </Tooltip>
       </button>
     </li>
   );

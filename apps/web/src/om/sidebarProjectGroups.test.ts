@@ -23,12 +23,16 @@ describe("groupThreadsByProject", () => {
 
 describe("buildProjectSections", () => {
   it("lists every project, splits settled threads and empties collapsed sections", () => {
+    const hasActiveByKey = new Map<string, boolean>();
     const sections = buildProjectSections({
       active: [thread("a1", "a"), thread("x1", "x"), thread("c1", "c")],
       settled: [thread("a2", "a"), thread("y1", "y"), thread("c2", "c")],
       groupKeyOf,
       groupOrder: ["a", "b", "c"],
-      isCollapsed: (key) => key === "c",
+      isCollapsed: (key, hasActive) => {
+        hasActiveByKey.set(key, hasActive);
+        return key === "c";
+      },
     });
     expect(
       sections.map((section) => [
@@ -44,5 +48,14 @@ describe("buildProjectSections", () => {
       ["x", ["x1"], [], false],
       ["y", [], ["y1"], false],
     ]);
+    // Collapsed sections still report their active threads, so a default can
+    // fold idle projects without hiding live work.
+    expect(Object.fromEntries(hasActiveByKey)).toEqual({
+      a: true,
+      b: false,
+      c: true,
+      x: true,
+      y: false,
+    });
   });
 });

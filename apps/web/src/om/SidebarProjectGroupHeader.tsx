@@ -33,7 +33,7 @@ export const SidebarProjectGroupHeader = memo(function SidebarProjectGroupHeader
   collapsed: boolean;
   /** Opens with a gap and a rule when other rows sit above it. */
   separated: boolean;
-  onToggle: (groupKey: string) => void;
+  onToggle: (groupKey: string, collapsed: boolean) => void;
 }) {
   const { groupKey, onToggle } = props;
   return (
@@ -45,7 +45,7 @@ export const SidebarProjectGroupHeader = memo(function SidebarProjectGroupHeader
       <button
         type="button"
         aria-expanded={!props.collapsed}
-        onClick={() => onToggle(groupKey)}
+        onClick={() => onToggle(groupKey, !props.collapsed)}
         className="flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-sm px-1.5 text-left text-xs text-sidebar-foreground outline-hidden hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <ChevronRightIcon
@@ -97,7 +97,7 @@ export const SidebarProjectSettledToggle = memo(function SidebarProjectSettledTo
         type="button"
         aria-expanded={props.expanded}
         onClick={() => onToggle(groupKey)}
-        className="flex h-6 w-full cursor-pointer items-center gap-1.5 rounded-sm pr-1.5 pl-6 text-left text-2xs text-sidebar-muted-foreground outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="flex h-6 w-full cursor-pointer items-center gap-1.5 rounded-sm px-1.5 text-left text-2xs text-sidebar-muted-foreground outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         <ChevronRightIcon
           aria-hidden

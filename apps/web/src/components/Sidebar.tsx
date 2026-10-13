@@ -2632,7 +2632,7 @@ export default function Sidebar() {
   // OM Code: Active threads grouped under project headers.
   const omGroupByProject = useSidebarGroupingStore((state) => state.groupByProject);
   const omCollapsedGroupKeys = useSidebarGroupingStore((state) => state.collapsedGroupKeys);
-  const omToggleGroupCollapsed = useSidebarGroupingStore((state) => state.toggleGroupCollapsed);
+  const omSetGroupCollapsed = useSidebarGroupingStore((state) => state.setGroupCollapsed);
   const omProjectGroupByProjectKey = useMemo(
     () =>
       new Map(
@@ -3907,7 +3907,7 @@ export default function Sidebar() {
             settled: settledThreads,
             groupKeyOf: omGroupKeyOf,
             groupOrder: omGroupOrder,
-            isCollapsed: (groupKey) => omCollapsedGroupKeys[groupKey] === true,
+            isCollapsed: (groupKey, hasActive) => omCollapsedGroupKeys[groupKey] ?? !hasActive,
           })
         : null,
     [
@@ -5595,29 +5595,43 @@ export default function Sidebar() {
                               }
                               collapsed={section.collapsed}
                               separated={index > 0 || pinnedThreads.length > 0}
-                              onToggle={omToggleGroupCollapsed}
+                              onToggle={omSetGroupCollapsed}
                             />,
                           );
                           if (section.collapsed) return;
-                          for (const thread of section.active) {
-                            items.push(renderThreadRow(thread, "active"));
-                          }
-                          if (section.settled.length === 0) return;
-                          const settledExpanded = omExpandedSettledKeys[section.groupKey] === true;
-                          items.push(
-                            <SidebarProjectSettledToggle
-                              key={`om-settled:${section.groupKey}`}
-                              groupKey={section.groupKey}
-                              count={section.settled.length}
-                              expanded={settledExpanded}
-                              onToggle={omToggleSettledExpanded}
-                            />,
+                          // Nested under the header so the project reads as a tree.
+                          const children: ReactNode[] = section.active.map((thread) =>
+                            renderThreadRow(thread, "active"),
                           );
-                          if (!settledExpanded) return;
-                          for (const thread of section.settled) {
-                            // Outside the sortable list: settled rows here are not draggable.
-                            items.push(renderThreadRowInner(thread, "settled"));
+                          const settledExpanded = omExpandedSettledKeys[section.groupKey] === true;
+                          if (section.settled.length > 0) {
+                            children.push(
+                              <SidebarProjectSettledToggle
+                                key={`om-settled:${section.groupKey}`}
+                                groupKey={section.groupKey}
+                                count={section.settled.length}
+                                expanded={settledExpanded}
+                                onToggle={omToggleSettledExpanded}
+                              />,
+                            );
                           }
+                          if (settledExpanded) {
+                            for (const thread of section.settled) {
+                              // Outside the sortable list: settled rows here are not draggable.
+                              children.push(renderThreadRowInner(thread, "settled"));
+                            }
+                          }
+                          if (children.length === 0) return;
+                          items.push(
+                            <li key={`om-body:${section.groupKey}`} className="list-none">
+                              <ul
+                                role="presentation"
+                                className="ml-3 flex flex-col gap-px border-l border-sidebar-border pl-1.5"
+                              >
+                                {children}
+                              </ul>
+                            </li>,
+                          );
                         });
                       };
                       for (const item of sidebarListItems) {

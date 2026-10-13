@@ -61,7 +61,8 @@ export function buildProjectSections<T>(input: {
   readonly settled: readonly T[];
   readonly groupKeyOf: (thread: T) => string;
   readonly groupOrder: readonly string[];
-  readonly isCollapsed: (groupKey: string) => boolean;
+  /** Whether a section is folded, given whether it has active threads. */
+  readonly isCollapsed: (groupKey: string, hasActive: boolean) => boolean;
 }): ProjectSection<T>[] {
   const keys = [...input.groupOrder];
   const known = new Set(keys);
@@ -82,10 +83,11 @@ export function buildProjectSections<T>(input: {
   const activeByKey = bucket(input.active);
   const settledByKey = bucket(input.settled);
   return keys.map((groupKey) => {
-    const collapsed = input.isCollapsed(groupKey);
+    const active = activeByKey.get(groupKey) ?? [];
+    const collapsed = input.isCollapsed(groupKey, active.length > 0);
     return {
       groupKey,
-      active: collapsed ? [] : (activeByKey.get(groupKey) ?? []),
+      active: collapsed ? [] : active,
       settled: settledByKey.get(groupKey) ?? [],
       collapsed,
     };
@@ -94,9 +96,13 @@ export function buildProjectSections<T>(input: {
 
 interface SidebarGroupingState {
   groupByProject: boolean;
-  collapsedGroupKeys: Record<string, true>;
+  /**
+   * Explicit fold choices. Projects without one start collapsed when they
+   * have no active threads, so idle projects take a single row.
+   */
+  collapsedGroupKeys: Record<string, boolean>;
   setGroupByProject: (enabled: boolean) => void;
-  toggleGroupCollapsed: (groupKey: string) => void;
+  setGroupCollapsed: (groupKey: string, collapsed: boolean) => void;
   /** Sections showing their settled threads. Not persisted: settled starts hidden. */
   expandedSettledGroupKeys: Record<string, true>;
   toggleSettledExpanded: (groupKey: string) => void;
@@ -109,11 +115,10 @@ export const useSidebarGroupingStore = create<SidebarGroupingState>()(
       collapsedGroupKeys: {},
       expandedSettledGroupKeys: {},
       setGroupByProject: (enabled) => set({ groupByProject: enabled }),
-      toggleGroupCollapsed: (groupKey) =>
-        set((state) => {
-          const { [groupKey]: wasCollapsed, ...rest } = state.collapsedGroupKeys;
-          return { collapsedGroupKeys: wasCollapsed ? rest : { ...rest, [groupKey]: true } };
-        }),
+      setGroupCollapsed: (groupKey, collapsed) =>
+        set((state) => ({
+          collapsedGroupKeys: { ...state.collapsedGroupKeys, [groupKey]: collapsed },
+        })),
       toggleSettledExpanded: (groupKey) =>
         set((state) => {
           const { [groupKey]: wasExpanded, ...rest } = state.expandedSettledGroupKeys;

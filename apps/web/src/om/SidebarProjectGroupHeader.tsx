@@ -83,7 +83,34 @@ export const SidebarProjectGroupHeader = memo(function SidebarProjectGroupHeader
   );
 });
 
-/** Header button that turns project grouping of Active threads on and off. */
+/** Row under a project's active threads that shows or hides its settled ones. */
+export const SidebarProjectSettledToggle = memo(function SidebarProjectSettledToggle(props: {
+  groupKey: string;
+  count: number;
+  expanded: boolean;
+  onToggle: (groupKey: string) => void;
+}) {
+  const { groupKey, onToggle } = props;
+  return (
+    <li className="list-none">
+      <button
+        type="button"
+        aria-expanded={props.expanded}
+        onClick={() => onToggle(groupKey)}
+        className="flex h-6 w-full cursor-pointer items-center gap-1.5 rounded-sm pr-1.5 pl-6 text-left text-2xs text-sidebar-muted-foreground outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
+        <ChevronRightIcon
+          aria-hidden
+          className={cn("size-3 shrink-0 transition-transform", props.expanded && "rotate-90")}
+        />
+        <span className="min-w-0 flex-1 truncate">Settled</span>
+        <span className="shrink-0 font-mono tabular-nums">{props.count}</span>
+      </button>
+    </li>
+  );
+});
+
+/** Header button that turns project grouping of threads on and off. */
 export function SidebarGroupingToggle() {
   const groupByProject = useSidebarGroupingStore((state) => state.groupByProject);
   const setGroupByProject = useSidebarGroupingStore((state) => state.setGroupByProject);

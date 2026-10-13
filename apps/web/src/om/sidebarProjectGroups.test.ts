@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { groupThreadsByProject, placeGroupHeaders } from "./sidebarProjectGroups";
+import { buildProjectSections, groupThreadsByProject } from "./sidebarProjectGroups";
 
 const thread = (id: string, project: string) => ({ id, project });
 const groupKeyOf = (entry: { project: string }) => entry.project;
@@ -21,19 +21,28 @@ describe("groupThreadsByProject", () => {
   });
 });
 
-describe("placeGroupHeaders", () => {
-  it("puts collapsed groups ahead of the next visible thread or in the tail", () => {
-    const groups = groupThreadsByProject(
-      [thread("a1", "a"), thread("b1", "b"), thread("c1", "c"), thread("d1", "d")],
+describe("buildProjectSections", () => {
+  it("lists every project, splits settled threads and empties collapsed sections", () => {
+    const sections = buildProjectSections({
+      active: [thread("a1", "a"), thread("x1", "x"), thread("c1", "c")],
+      settled: [thread("a2", "a"), thread("y1", "y"), thread("c2", "c")],
       groupKeyOf,
-      ["a", "b", "c", "d"],
-    );
-    const collapsed = new Set(["b", "d"]);
-    const placement = placeGroupHeaders(groups, (entry) => !collapsed.has(entry.project), keyOf);
-    expect([...placement.beforeThread]).toEqual([
-      ["a1", ["a"]],
-      ["c1", ["b", "c"]],
+      groupOrder: ["a", "b", "c"],
+      isCollapsed: (key) => key === "c",
+    });
+    expect(
+      sections.map((section) => [
+        section.groupKey,
+        section.active.map(keyOf),
+        section.settled.map(keyOf),
+        section.collapsed,
+      ]),
+    ).toEqual([
+      ["a", ["a1"], ["a2"], false],
+      ["b", [], [], false],
+      ["c", [], ["c2"], true],
+      ["x", ["x1"], [], false],
+      ["y", [], ["y1"], false],
     ]);
-    expect(placement.trailing).toEqual(["d"]);
   });
 });

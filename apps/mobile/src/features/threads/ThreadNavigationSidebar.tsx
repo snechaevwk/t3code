@@ -31,6 +31,8 @@ import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
 import { useProjects, useNavigationThreadShells } from "../../state/entities";
 import { useThreadSearch } from "../../state/queries";
 import { useThreadListV2ShelfPreferences } from "./use-thread-list-v2-shelf-preferences";
+import { buildThreadListV2ProjectGrouping } from "./omProjectGroups";
+import { useOmProjectGroupingPreferences } from "./use-om-project-grouping-preferences";
 import { usePendingThreadOrder } from "../../state/thread-order";
 import { threadListEnvironmentsAtom } from "../../state/server";
 import { usePendingNewTasks } from "../../state/use-pending-new-tasks";
@@ -58,6 +60,7 @@ import { createSidebarHeaderItems } from "./sidebar-native-header-items";
 import { SidebarNavigationShell } from "./sidebar-navigation-shell";
 import {
   ThreadListV2PendingRow,
+  ThreadListV2ProjectGroupHeader,
   ThreadListV2Row,
   ThreadListV2SettledShelfHeader,
   ThreadListV2ShowMoreRow,
@@ -255,6 +258,23 @@ function ThreadNavigationSidebarPane(
   );
   // A saved project stays selected while its environment is offline or filtered out.
   const selectedProjectKey = selectedProjectScope?.key ?? null;
+  // OM Code: project headers over the active block unless already scoped.
+  const omProjectGrouping = useOmProjectGroupingPreferences();
+  const projectGrouping = useMemo(
+    () =>
+      omProjectGrouping.groupByProject && selectedProjectScope === null
+        ? buildThreadListV2ProjectGrouping({
+            scopes: projectScopes,
+            collapsedKeys: omProjectGrouping.collapsedKeys,
+          })
+        : null,
+    [
+      omProjectGrouping.collapsedKeys,
+      omProjectGrouping.groupByProject,
+      projectScopes,
+      selectedProjectScope,
+    ],
+  );
   const selectedProjectRefs = useMemo(
     () =>
       selectedProjectScope === null
@@ -456,6 +476,7 @@ function ThreadNavigationSidebarPane(
       queuedThreadKeys,
       moveAvailability: threadMoveAvailability,
       shelfPreferencesLoading: !shelfPreferencesLoaded,
+      projectGrouping,
     });
     if (settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0) {
       items.push({
@@ -469,6 +490,7 @@ function ThreadNavigationSidebarPane(
     nowMinute,
     options.selectedEnvironmentId,
     pendingTasks,
+    projectGrouping,
     props.searchQuery,
     queuedThreadKeys,
     threadMoveAvailability,
@@ -523,12 +545,27 @@ function ThreadNavigationSidebarPane(
               ],
             },
           ] satisfies MenuAction[])),
+      {
+        id: "om:group-by-project",
+        title: "Group by project",
+        state: omProjectGrouping.groupByProject ? "on" : "off",
+      },
     ],
-    [environments, options, projectFilterOptions, selectedProjectKey],
+    [
+      environments,
+      omProjectGrouping.groupByProject,
+      options,
+      projectFilterOptions,
+      selectedProjectKey,
+    ],
   );
   const handleListMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
       const event = nativeEvent.event;
+      if (event === "om:group-by-project") {
+        omProjectGrouping.toggleGroupByProject();
+        return;
+      }
       if (event === "environment:all") {
         setSelectedEnvironmentId(null);
         return;
@@ -552,7 +589,13 @@ function ThreadNavigationSidebarPane(
         return;
       }
     },
-    [environments, projectFilterOptions, setSelectedEnvironmentId, setSelectedProjectKey],
+    [
+      environments,
+      omProjectGrouping.toggleGroupByProject,
+      projectFilterOptions,
+      setSelectedEnvironmentId,
+      setSelectedProjectKey,
+    ],
   );
 
   const [measuredHeaderHeight, setMeasuredHeaderHeight] = useState<number | null>(null);
@@ -784,6 +827,14 @@ function ThreadNavigationSidebarPane(
               pane="sidebar"
             />
           );
+        case "v2-project-group":
+          return (
+            <ThreadListV2ProjectGroupHeader
+              item={item}
+              pane="sidebar"
+              onToggle={omProjectGrouping.toggleGroupCollapsed}
+            />
+          );
         case "v2-show-more":
           return (
             <ThreadListV2ShowMoreRow
@@ -831,6 +882,7 @@ function ThreadNavigationSidebarPane(
       snoozeEnvironmentIds,
       snoozeThread,
       toggleSettledShelf,
+      omProjectGrouping.toggleGroupCollapsed,
       toggleSnoozedShelf,
       toggleWorkingShelf,
       unpinThread,
@@ -854,9 +906,13 @@ function ThreadNavigationSidebarPane(
         selectedProjectKey,
         onEnvironmentChange: setSelectedEnvironmentId,
         onProjectChange: setSelectedProjectKey,
+        groupByProject: omProjectGrouping.groupByProject,
+        onToggleGroupByProject: omProjectGrouping.toggleGroupByProject,
       }),
     [
       environments,
+      omProjectGrouping.groupByProject,
+      omProjectGrouping.toggleGroupByProject,
       options,
       projectFilterOptions,
       selectedProjectKey,

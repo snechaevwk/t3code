@@ -11,6 +11,7 @@ import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import { createNativeMailSearchToolbarItem } from "../layout/native-mail-search-toolbar";
 import { useNativeMailSearchToolbar } from "../../native/use-native-mail-search-toolbar";
 import { buildHomeListFilterMenu } from "./home-list-filter-menu";
+import { useOmProjectGroupingPreferences } from "../threads/use-om-project-grouping-preferences";
 import { createSidebarHeaderItems } from "../threads/sidebar-native-header-items";
 import type { HomeHeaderProps } from "./HomeHeader.types";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
@@ -55,7 +56,12 @@ export function HomeHeader(props: HomeHeaderProps) {
     return searchBarRef.current !== null;
   }, [primaryColumn, panes.primarySidebarVisible, togglePrimarySidebar]);
   useHardwareKeyboardCommand("focusSearch", focusSearch);
-  const filterMenu = buildHomeListFilterMenu(props);
+  const omGrouping = useOmProjectGroupingPreferences();
+  const filterMenu = buildHomeListFilterMenu({
+    ...props,
+    groupByProject: omGrouping.groupByProject,
+    onToggleGroupByProject: omGrouping.toggleGroupByProject,
+  });
 
   if (props.usesWorkspaceToolbar) {
     return null;

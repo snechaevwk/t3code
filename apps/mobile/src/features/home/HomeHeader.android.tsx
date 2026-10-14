@@ -3,6 +3,7 @@ import { useCallback, useMemo } from "react";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { MaterialThreadListToolbar } from "./MaterialThreadListToolbar";
 import type { HomeHeaderProps } from "./HomeHeader.types";
+import { useOmProjectGroupingPreferences } from "../threads/use-om-project-grouping-preferences";
 
 export type { HomeHeaderEnvironment } from "./HomeHeader.types";
 
@@ -16,6 +17,7 @@ export function HomeHeader(props: HomeHeaderProps) {
   // keys off those alone.
   const hasCustomListOptions =
     props.selectedEnvironmentId !== null || props.selectedProjectKey !== null;
+  const omGrouping = useOmProjectGroupingPreferences();
   const menuActions = useMemo<MenuAction[]>(
     () => [
       {
@@ -54,12 +56,27 @@ export function HomeHeader(props: HomeHeaderProps) {
               ],
             },
           ] satisfies MenuAction[])),
+      {
+        id: "om:group-by-project",
+        title: "Group by project",
+        state: checkedMenuState(omGrouping.groupByProject),
+      },
     ],
-    [props.environments, props.projects, props.selectedEnvironmentId, props.selectedProjectKey],
+    [
+      omGrouping.groupByProject,
+      props.environments,
+      props.projects,
+      props.selectedEnvironmentId,
+      props.selectedProjectKey,
+    ],
   );
   const handleMenuAction = useCallback(
     (event: { nativeEvent: { event: string } }) => {
       const id = event.nativeEvent.event;
+      if (id === "om:group-by-project") {
+        omGrouping.toggleGroupByProject();
+        return;
+      }
       if (id === "environment:all") {
         props.onEnvironmentChange(null);
         return;
@@ -89,7 +106,7 @@ export function HomeHeader(props: HomeHeaderProps) {
         return;
       }
     },
-    [props],
+    [omGrouping, props],
   );
 
   return (

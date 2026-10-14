@@ -293,6 +293,19 @@ import {
   type ComposerThreadDraftState,
   type DraftSessionState,
 } from "../composerDraftStore";
+import { countThreadStates, omThreadStateOf } from "@t3tools/client-runtime/om-thread-states";
+import { ThreadUsageBreakdown, ThreadUsageInline } from "~/om/threadUsage";
+import {
+  buildProjectSections,
+  groupThreadsByProject,
+  useSidebarGroupingStore,
+} from "~/om/sidebarProjectGroups";
+import {
+  SidebarProjectGroupHeader,
+  SidebarProjectSettledToggle,
+} from "~/om/SidebarProjectGroupHeader";
+
+const EMPTY_OM_COUNTS = countThreadStates([]);
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -551,6 +564,11 @@ function SidebarThreadTooltip({
             <div className="min-w-0 truncate text-foreground/75">
               {terminalProcessLabel(terminalProcessCount)}
             </div>
+          </div>
+        ) : null}
+        {thread.usage ? (
+          <div className="border-t border-border/60 pt-1.5">
+            <ThreadUsageBreakdown usage={thread.usage} />
           </div>
         ) : null}
         {thread.runtime?.lastError ? (
@@ -1667,13 +1685,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         onBlur={handleRenameBlur}
         onClick={(event) => event.stopPropagation()}
         onDoubleClick={(event) => event.stopPropagation()}
-        className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm font-medium text-card-foreground outline-none focus:border-foreground"
+        className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-xs font-medium text-card-foreground outline-none focus:border-foreground"
       />
     ) : (
       <span
         aria-hidden
         className={cn(
-          "min-w-0 flex-1 text-sm transition-opacity motion-reduce:transition-none",
+          "min-w-0 flex-1 text-xs transition-opacity motion-reduce:transition-none",
           shouldRecede ? "font-normal" : "font-medium",
           variant === "card"
             ? cn(
@@ -2195,6 +2213,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   </span>
                 </span>
               ) : null}
+              <ThreadUsageInline usage={thread.usage} />
               <span
                 aria-hidden
                 className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
@@ -2610,6 +2629,39 @@ export default function Sidebar() {
       ),
     [projectGroups],
   );
+  // OM Code: Active threads grouped under project headers.
+  const omGroupByProject = useSidebarGroupingStore((state) => state.groupByProject);
+  const omCollapsedGroupKeys = useSidebarGroupingStore((state) => state.collapsedGroupKeys);
+  const omSetGroupCollapsed = useSidebarGroupingStore((state) => state.setGroupCollapsed);
+  const omProjectGroupByProjectKey = useMemo(
+    () =>
+      new Map(
+        projectGroups.flatMap((group) =>
+          group.memberProjects.map(
+            (project) => [`${project.environmentId}:${project.id}` as string, group] as const,
+          ),
+        ),
+      ),
+    [projectGroups],
+  );
+  const omGroupKeyOf = useCallback(
+    (thread: EnvironmentThreadShell) => {
+      const projectKey = `${thread.environmentId}:${thread.projectId}`;
+      return omProjectGroupByProjectKey.get(projectKey)?.projectKey ?? projectKey;
+    },
+    [omProjectGroupByProjectKey],
+  );
+  const omGroupOrder = useMemo(
+    () => projectGroups.map((group) => group.projectKey),
+    [projectGroups],
+  );
+  const omGroupActiveThreads = useCallback(
+    (list: EnvironmentThreadShell[]) =>
+      omGroupByProject
+        ? groupThreadsByProject(list, omGroupKeyOf, omGroupOrder).flatMap((group) => group.threads)
+        : list,
+    [omGroupByProject, omGroupKeyOf, omGroupOrder],
+  );
 
   const nowMinute = useNowMinute();
   const changeRequestSnapshotByKey = useAtomValue(threadChangeRequestSnapshotsAtom);
@@ -2927,7 +2979,7 @@ export default function Sidebar() {
             }),
       draggableThreadKeys: draggable,
       activeReorderableThreadKeys: activeReorderable,
-      activeThreads:
+      activeThreads: omGroupActiveThreads(
         optimisticDrop?.section !== "active" || optimisticDrop.order === null
           ? sortedActive
           : orderItemsByPreferredIds({
@@ -2935,6 +2987,7 @@ export default function Sidebar() {
               preferredIds: optimisticDrop.order,
               getId: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
             }),
+      ),
       // Newest send first; finishing and waking again do not move a row.
       workingThreads: sortWorkingThreadsBySend(working),
       // Soonest wake first: "what comes back next" is the shelf's question.
@@ -2948,6 +3001,7 @@ export default function Sidebar() {
     };
   }, [
     nowMinute,
+    omGroupActiveThreads,
     optimisticDrop,
     scopedProjectKeys,
     serverConfigs,
@@ -3842,6 +3896,47 @@ export default function Sidebar() {
     },
     [sectionByThreadKey],
   );
+  // OM Code: one section per project, settled threads tucked inside.
+  const omExpandedSettledKeys = useSidebarGroupingStore((state) => state.expandedSettledGroupKeys);
+  const omToggleSettledExpanded = useSidebarGroupingStore((state) => state.toggleSettledExpanded);
+  const omSections = useMemo(
+    () =>
+      omGroupByProject
+        ? buildProjectSections({
+            active: activeThreads,
+            settled: settledThreads,
+            groupKeyOf: omGroupKeyOf,
+            groupOrder: omGroupOrder,
+            isCollapsed: (groupKey, hasActive) => omCollapsedGroupKeys[groupKey] ?? !hasActive,
+          })
+        : null,
+    [
+      activeThreads,
+      omCollapsedGroupKeys,
+      omGroupByProject,
+      omGroupKeyOf,
+      omGroupOrder,
+      settledThreads,
+    ],
+  );
+  // Header counts cover every thread still in play: pinned, active and working.
+  const omStateCountsByGroup = useMemo(() => {
+    if (omSections === null) return null;
+    const statesByGroup = new Map<string, ReturnType<typeof omThreadStateOf>[]>();
+    for (const thread of [...pinnedThreads, ...activeThreads, ...workingThreads]) {
+      const key = omGroupKeyOf(thread);
+      const state = omThreadStateOf(resolveSidebarThreadStatus(thread));
+      const states = statesByGroup.get(key);
+      if (states) states.push(state);
+      else statesByGroup.set(key, [state]);
+    }
+    return new Map([...statesByGroup].map(([key, states]) => [key, countThreadStates(states)]));
+  }, [activeThreads, omGroupKeyOf, omSections, pinnedThreads, workingThreads]);
+  const omProjectGroupByGroupKey = useMemo(
+    () => new Map(projectGroups.map((group) => [group.projectKey as string, group] as const)),
+    [projectGroups],
+  );
+
   // Include every visible row in the measured order. Older servers disable
   // pickup on their rows without changing where those rows render.
   const sidebarListItems = useMemo((): readonly SidebarListItem[] => {
@@ -3867,7 +3962,10 @@ export default function Sidebar() {
     const pinnedRows = rowsOf(pinnedThreads, "pinned");
     items.push(...pinnedRows);
     items.push({ kind: "marker", marker: "pinned-divider" });
-    const activeRows = rowsOf(activeThreads, "active");
+    const activeRows = rowsOf(
+      omSections?.flatMap((section) => section.active) ?? activeThreads,
+      "active",
+    );
     items.push({ kind: "marker", marker: "active-placeholder" });
     items.push(...activeRows);
     if (workingThreads.length > 0) {
@@ -3878,6 +3976,8 @@ export default function Sidebar() {
       items.push({ kind: "marker", marker: "snoozed-header" });
       items.push(...rowsOf(visibleSnoozedThreads, "snoozed"));
     }
+    // Grouped, settled rows live inside their project sections instead.
+    if (omSections !== null) return items;
     items.push({ kind: "marker", marker: "settled-header" });
     const settledRows = rowsOf(renderedSettledThreads, "settled");
     items.push({ kind: "marker", marker: "settled-placeholder" });
@@ -3885,6 +3985,7 @@ export default function Sidebar() {
     return items;
   }, [
     activeThreads,
+    omSections,
     pinnedThreads,
     renderedSettledThreads,
     settledThreads.length,
@@ -5477,8 +5578,65 @@ export default function Sidebar() {
                           onDraftContextMenu={handleDraftContextMenu}
                         />,
                       ];
+                      // Grouped, the active rows render section by section right
+                      // after the active placeholder, in the same order as the
+                      // measured list.
+                      const renderOmSections = () => {
+                        omSections?.forEach((section, index) => {
+                          const group = omProjectGroupByGroupKey.get(section.groupKey) ?? null;
+                          items.push(
+                            <SidebarProjectGroupHeader
+                              key={`om-group:${section.groupKey}`}
+                              groupKey={section.groupKey}
+                              label={group?.displayName ?? "Project"}
+                              project={group}
+                              stateCounts={
+                                omStateCountsByGroup?.get(section.groupKey) ?? EMPTY_OM_COUNTS
+                              }
+                              collapsed={section.collapsed}
+                              separated={index > 0 || pinnedThreads.length > 0}
+                              onToggle={omSetGroupCollapsed}
+                            />,
+                          );
+                          if (section.collapsed) return;
+                          // Nested under the header so the project reads as a tree.
+                          const children: ReactNode[] = section.active.map((thread) =>
+                            renderThreadRow(thread, "active"),
+                          );
+                          const settledExpanded = omExpandedSettledKeys[section.groupKey] === true;
+                          if (section.settled.length > 0) {
+                            children.push(
+                              <SidebarProjectSettledToggle
+                                key={`om-settled:${section.groupKey}`}
+                                groupKey={section.groupKey}
+                                count={section.settled.length}
+                                expanded={settledExpanded}
+                                onToggle={omToggleSettledExpanded}
+                              />,
+                            );
+                          }
+                          if (settledExpanded) {
+                            for (const thread of section.settled) {
+                              // Outside the sortable list: settled rows here are not draggable.
+                              children.push(renderThreadRowInner(thread, "settled"));
+                            }
+                          }
+                          if (children.length === 0) return;
+                          items.push(
+                            <li key={`om-body:${section.groupKey}`} className="list-none">
+                              <ul
+                                role="presentation"
+                                className="ml-3 flex flex-col gap-px border-l border-sidebar-border pl-1.5"
+                              >
+                                {children}
+                              </ul>
+                            </li>,
+                          );
+                        });
+                      };
                       for (const item of sidebarListItems) {
                         if (item.kind === "thread") {
+                          if (omSections !== null && item.section === "active") continue;
                           items.push(renderThreadRow(threadByKey.get(item.key)!, item.section));
                           continue;
                         }
@@ -5522,6 +5680,7 @@ export default function Sidebar() {
                                 isDropTarget={dragTargetSection === "active"}
                               />,
                             );
+                            renderOmSections();
                             break;
                           case "working-header":
                             items.push(
@@ -5603,7 +5762,7 @@ export default function Sidebar() {
                       }
                       return items;
                     })()}
-                    {settledShelfExpanded && hiddenSettledCount > 0 ? (
+                    {omSections === null && settledShelfExpanded && hiddenSettledCount > 0 ? (
                       <li className="list-none">
                         <button
                           type="button"

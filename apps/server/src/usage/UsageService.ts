@@ -191,8 +191,18 @@ export class UsageService extends Context.Service<
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
     /** Refetches the rate table ahead of its TTL. See `ensureRates`. */
     readonly refreshRates: Effect.Effect<UsagePricing>;
+    /**
+     * The rate tables as currently loaded, without waiting on a fetch. A cold
+     * table starts loading in the background and reads as empty until then.
+     */
+    readonly currentRateTables: Effect.Effect<CurrentRateTables>;
   }
 >()("t3/usage/UsageService") {}
+
+export interface CurrentRateTables {
+  readonly rates: RateTable;
+  readonly overrides: RateTable;
+}
 
 const EMPTY_PRICING: UsagePricing = {
   status: "unavailable",
@@ -218,6 +228,7 @@ const layerTest = Layer.succeed(
         scanDurationMs: 0,
       }),
     refreshRates: Effect.succeed(EMPTY_PRICING),
+    currentRateTables: Effect.succeed({ rates: new Map(), overrides: new Map() }),
   }),
 );
 
@@ -321,6 +332,19 @@ export const make = Effect.gen(function* () {
     Effect.map(pricing),
     Effect.withSpan("UsageService.refreshRates"),
   );
+
+  let backgroundRatesLoadStarted = false;
+  const currentRateTables = Effect.gen(function* () {
+    if (ratesFetchedAtMs === null && !backgroundRatesLoadStarted) {
+      backgroundRatesLoadStarted = true;
+      yield* ensureRates(false).pipe(Effect.forkDetach);
+    }
+    const overrides = yield* settingsService.getSettings.pipe(
+      Effect.map((settings) => createOverrideRateTable(settings.usagePriceOverrides)),
+      Effect.orElseSucceed((): RateTable => new Map()),
+    );
+    return { rates, overrides } satisfies CurrentRateTables;
+  });
 
   // A settings failure must not silently discard custom rates or transcript homes.
   const readSettings = settingsService.getSettings.pipe(
@@ -930,7 +954,7 @@ export const make = Effect.gen(function* () {
 
   // `awaitPersisted` is outside the service interface: tests use it to restart
   // against what a previous instance wrote.
-  return { readSummary, refreshRates, awaitPersisted } as const;
+  return { readSummary, refreshRates, currentRateTables, awaitPersisted } as const;
 });
 
 export const layer = Layer.effect(UsageService, make);

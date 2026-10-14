@@ -51,6 +51,7 @@ import { DispatchModeLimit, exceededDispatchModeLimit } from "./DispatchModeLimi
 import { projectTurnItemForDetail } from "./WireProjection.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as OmThreadUsage from "../om/ThreadUsage.ts";
 
 export type ThreadManagementSendMode = "auto" | "queue" | "steer" | "restart";
 
@@ -519,6 +520,8 @@ const make = Effect.gen(function* () {
   const legacyImporter = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
+  // OM Code: client-facing shells carry token and cost totals.
+  const omUsage = yield* OmThreadUsage.makeShellUsageEnricher;
 
   const assertProviderInstanceEnabled: ThreadManagementServiceShape["assertProviderInstanceEnabled"] =
     (input) =>
@@ -1139,9 +1142,14 @@ const make = Effect.gen(function* () {
     getThreadSnapshotWindow,
     getProjectThreadRecords,
     getProjectThread,
-    getShellSnapshot: orchestrator.getShellSnapshot,
-    readShellSnapshot: orchestrator.readShellSnapshot,
-    getThreadShell: orchestrator.getThreadShell,
+    getShellSnapshot: (options) =>
+      orchestrator.getShellSnapshot(options).pipe(Effect.flatMap(omUsage.enrichSnapshot)),
+    readShellSnapshot: (options) =>
+      orchestrator
+        .readShellSnapshot(options)
+        .pipe(Effect.map((decode) => decode.pipe(Effect.flatMap(omUsage.enrichSnapshot)))),
+    getThreadShell: (threadId) =>
+      orchestrator.getThreadShell(threadId).pipe(Effect.flatMap(omUsage.enrichShell)),
     listProjectThreads,
     sendToThread,
     assertProviderInstanceEnabled,

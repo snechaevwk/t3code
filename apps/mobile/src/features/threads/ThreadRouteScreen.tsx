@@ -1,5 +1,6 @@
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
+import { formatThreadUsageInline } from "@t3tools/client-runtime/om-thread-usage";
 import { buildProjectThreadStartTurnInput } from "../../lib/projectThreadStartTurn";
 import { useWorktreeSetup } from "./use-worktree-setup";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
@@ -443,6 +444,8 @@ function ThreadRouteContent(
   const headerSubtitle = [
     selectedThreadProject?.title ?? null,
     selectedEnvironmentConnection?.environmentLabel ?? null,
+    // OM Code: tokens and estimated cost.
+    selectedThread?.usage ? formatThreadUsageInline(selectedThread.usage) : null,
   ]
     .filter(Boolean)
     .join(" · ");

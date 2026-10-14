@@ -4,7 +4,7 @@ import {
   type OmThreadState,
   type OmThreadStateCounts,
 } from "@t3tools/client-runtime/om-thread-states";
-import { ChevronRightIcon, ListIcon, ListTreeIcon } from "lucide-react";
+import { ChevronRightIcon, ListIcon, ListTreeIcon, SquarePenIcon } from "lucide-react";
 import { memo } from "react";
 
 import { ProjectFavicon, type ProjectFaviconProject } from "~/components/ProjectFavicon";
@@ -34,51 +34,70 @@ export const SidebarProjectGroupHeader = memo(function SidebarProjectGroupHeader
   /** Opens with a gap and a rule when other rows sit above it. */
   separated: boolean;
   onToggle: (groupKey: string, collapsed: boolean) => void;
+  /** Starts a new thread in this project; the button shows on hover, focus, or touch. */
+  onNewThread: (groupKey: string) => void;
 }) {
-  const { groupKey, onToggle } = props;
+  const { groupKey, onToggle, onNewThread } = props;
   return (
     // The gap and rule make each project's rows read as their own block.
     <li
       className={cn("list-none", props.separated && "mt-4 border-t border-sidebar-border pt-2")}
       data-om-project-group={groupKey}
     >
-      <button
-        type="button"
-        aria-expanded={!props.collapsed}
-        onClick={() => onToggle(groupKey, !props.collapsed)}
-        className="flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-sm px-1.5 text-left text-xs text-sidebar-foreground outline-hidden hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-      >
-        <ChevronRightIcon
-          aria-hidden
-          className={cn("size-3 shrink-0 transition-transform", !props.collapsed && "rotate-90")}
-        />
-        {props.project ? (
-          <ProjectFavicon project={props.project} className="size-3.5 shrink-0" />
-        ) : null}
-        <span className="min-w-0 flex-1 truncate font-semibold uppercase tracking-wide">
-          {props.label}
-        </span>
+      <div className="group/project-header relative">
+        <button
+          type="button"
+          aria-expanded={!props.collapsed}
+          onClick={() => onToggle(groupKey, !props.collapsed)}
+          className="flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-sm px-1.5 text-left text-xs text-sidebar-foreground outline-hidden hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring group-focus-within/project-header:pr-8 group-hover/project-header:bg-sidebar-row-hover group-hover/project-header:pr-8 pointer-coarse:pr-8"
+        >
+          <ChevronRightIcon
+            aria-hidden
+            className={cn("size-3 shrink-0 transition-transform", !props.collapsed && "rotate-90")}
+          />
+          {props.project ? (
+            <ProjectFavicon project={props.project} className="size-3.5 shrink-0" />
+          ) : null}
+          <span className="min-w-0 flex-1 truncate font-semibold uppercase tracking-wide">
+            {props.label}
+          </span>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span
+                  className="flex shrink-0 items-center font-mono tabular-nums"
+                  aria-label={describeThreadStateCounts(props.stateCounts)}
+                />
+              }
+            >
+              {OM_THREAD_STATE_ORDER.filter((state) => props.stateCounts[state] > 0).map(
+                (state, index) => (
+                  <span key={state}>
+                    {index > 0 ? <span className="text-sidebar-muted-foreground/60">/</span> : null}
+                    <span className={STATE_CLASS_NAME[state]}>{props.stateCounts[state]}</span>
+                  </span>
+                ),
+              )}
+            </TooltipTrigger>
+            <TooltipPopup side="top">{describeThreadStateCounts(props.stateCounts)}</TooltipPopup>
+          </Tooltip>
+        </button>
         <Tooltip>
           <TooltipTrigger
             render={
-              <span
-                className="flex shrink-0 items-center font-mono tabular-nums"
-                aria-label={describeThreadStateCounts(props.stateCounts)}
+              <button
+                type="button"
+                aria-label={`New thread in ${props.label}`}
+                onClick={() => onNewThread(groupKey)}
+                className="pointer-events-none absolute top-1/2 right-0.5 inline-flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-icon-muted opacity-0 outline-hidden hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100"
               />
             }
           >
-            {OM_THREAD_STATE_ORDER.filter((state) => props.stateCounts[state] > 0).map(
-              (state, index) => (
-                <span key={state}>
-                  {index > 0 ? <span className="text-sidebar-muted-foreground/60">/</span> : null}
-                  <span className={STATE_CLASS_NAME[state]}>{props.stateCounts[state]}</span>
-                </span>
-              ),
-            )}
+            <SquarePenIcon aria-hidden className="size-3.5" />
           </TooltipTrigger>
-          <TooltipPopup side="top">{describeThreadStateCounts(props.stateCounts)}</TooltipPopup>
+          <TooltipPopup side="top">New thread</TooltipPopup>
         </Tooltip>
-      </button>
+      </div>
     </li>
   );
 });

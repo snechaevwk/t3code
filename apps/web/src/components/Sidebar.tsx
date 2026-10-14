@@ -3222,6 +3222,31 @@ export default function Sidebar() {
   // a ref keeps it out of attemptSettle's dependency array.
   const handleNewThreadRef = useRef(newThreadContext.handleNewThread);
   handleNewThreadRef.current = newThreadContext.handleNewThread;
+  // New thread in a project group's representative project, the same one its
+  // favicon and settings resolve to.
+  const omCreateThreadInGroup = useCallback(
+    (groupKey: string) => {
+      const group = projectGroupsRef.current.find((g) => g.projectKey === groupKey);
+      if (!group) return;
+      if (isMobile) setOpenMobile(false);
+      void (async () => {
+        const result = await settlePromise(() =>
+          handleNewThreadRef.current(scopeProjectRef(group.environmentId, group.id)),
+        );
+        if (result._tag === "Failure") {
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not create thread",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        }
+      })();
+    },
+    [isMobile, setOpenMobile],
+  );
   const settledThreadKeys = useMemo(
     () =>
       new Set(
@@ -5596,6 +5621,7 @@ export default function Sidebar() {
                               collapsed={section.collapsed}
                               separated={index > 0 || pinnedThreads.length > 0}
                               onToggle={omSetGroupCollapsed}
+                              onNewThread={omCreateThreadInGroup}
                             />,
                           );
                           if (section.collapsed) return;

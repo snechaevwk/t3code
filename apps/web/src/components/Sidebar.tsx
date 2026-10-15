@@ -304,6 +304,7 @@ import {
   SidebarProjectGroupHeader,
   SidebarProjectSettledToggle,
 } from "~/om/SidebarProjectGroupHeader";
+import { useProjectGroupCommands } from "./settings/useProjectGroupCommands";
 
 const EMPTY_OM_COUNTS = countThreadStates([]);
 
@@ -3247,6 +3248,81 @@ export default function Sidebar() {
     },
     [isMobile, setOpenMobile],
   );
+  // Project menu on a group header: rename inline, settings, copy path, remove.
+  const { renameGroup: omRenameGroup, removeMembers: omRemoveGroupMembers } =
+    useProjectGroupCommands();
+  const [omRenamingGroupKey, setOmRenamingGroupKey] = useState<string | null>(null);
+  const omOpenProjectGroupMenu = useCallback(
+    (groupKey: string, position: { x: number; y: number }) => {
+      void (async () => {
+        const api = readLocalApi();
+        const group = projectGroupsRef.current.find((g) => g.projectKey === groupKey);
+        if (!api || !group) return;
+        const singleMember = group.memberProjects.length === 1 ? group.memberProjects[0]! : null;
+        const clicked = await settlePromise(() =>
+          api.contextMenu.show(
+            [
+              { id: "rename", label: "Rename", icon: "pencil" },
+              ...(singleMember
+                ? [{ id: "copy-path" as const, label: "Copy path", icon: "folder" }]
+                : []),
+              { id: "project-settings", label: "Project settings", icon: "settings" },
+              {
+                id: "remove",
+                label: "Remove project…",
+                icon: "trash",
+                destructive: true,
+                separatorBefore: true,
+              },
+            ],
+            position,
+          ),
+        );
+        if (clicked._tag === "Failure") return;
+        switch (clicked.value) {
+          case "rename":
+            setOmRenamingGroupKey(groupKey);
+            return;
+          case "copy-path":
+            if (singleMember) {
+              copyPathToClipboard(singleMember.workspaceRoot, {
+                path: singleMember.workspaceRoot,
+              });
+            }
+            return;
+          case "project-settings":
+            openProjectSettings(group);
+            return;
+          case "remove": {
+            // Leave the route when it shows a thread of the removed project.
+            const routeKey = routeThreadKeyRef.current;
+            const routeRef = routeKey ? parseScopedThreadKey(routeKey) : null;
+            const routeThread = routeRef ? readThreadShell(routeRef) : null;
+            const routeInGroup =
+              routeThread != null &&
+              group.memberProjectRefs.some(
+                (ref) =>
+                  ref.environmentId === routeThread.environmentId &&
+                  ref.projectId === routeThread.projectId,
+              );
+            const removed = await omRemoveGroupMembers(group, group.memberProjects, false);
+            if (removed && routeInGroup) void router.navigate({ to: "/", replace: true });
+            return;
+          }
+        }
+      })();
+    },
+    [copyPathToClipboard, omRemoveGroupMembers, openProjectSettings, router],
+  );
+  const omEndProjectRename = useCallback(
+    (groupKey: string, title: string | null) => {
+      setOmRenamingGroupKey(null);
+      const group = projectGroupsRef.current.find((g) => g.projectKey === groupKey);
+      if (title === null || !group) return;
+      void omRenameGroup(group, title, true);
+    },
+    [omRenameGroup],
+  );
   const settledThreadKeys = useMemo(
     () =>
       new Set(
@@ -5621,7 +5697,10 @@ export default function Sidebar() {
                               collapsed={section.collapsed}
                               separated={index > 0 || pinnedThreads.length > 0}
                               onToggle={omSetGroupCollapsed}
+                              renaming={omRenamingGroupKey === section.groupKey}
                               onNewThread={omCreateThreadInGroup}
+                              onOpenMenu={omOpenProjectGroupMenu}
+                              onRenameEnd={omEndProjectRename}
                             />,
                           );
                           if (section.collapsed) return;

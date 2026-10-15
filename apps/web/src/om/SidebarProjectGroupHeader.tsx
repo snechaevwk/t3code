@@ -4,8 +4,14 @@ import {
   type OmThreadState,
   type OmThreadStateCounts,
 } from "@t3tools/client-runtime/om-thread-states";
-import { ChevronRightIcon, ListIcon, ListTreeIcon, SquarePenIcon } from "lucide-react";
-import { memo } from "react";
+import {
+  ChevronRightIcon,
+  EllipsisIcon,
+  ListIcon,
+  ListTreeIcon,
+  SquarePenIcon,
+} from "lucide-react";
+import { memo, useRef } from "react";
 
 import { ProjectFavicon, type ProjectFaviconProject } from "~/components/ProjectFavicon";
 import { SidebarHeaderIconButton } from "~/components/sidebar/SidebarThreadHeader";
@@ -33,74 +39,141 @@ export const SidebarProjectGroupHeader = memo(function SidebarProjectGroupHeader
   collapsed: boolean;
   /** Opens with a gap and a rule when other rows sit above it. */
   separated: boolean;
+  /** Swaps the label for an inline name field. */
+  renaming: boolean;
   onToggle: (groupKey: string, collapsed: boolean) => void;
   /** Starts a new thread in this project; the button shows on hover, focus, or touch. */
   onNewThread: (groupKey: string) => void;
+  /** Opens the project menu at a viewport point, from the dots button or a right-click. */
+  onOpenMenu: (groupKey: string, position: { x: number; y: number }) => void;
+  /** Ends an inline rename; `title` is null when cancelled. */
+  onRenameEnd: (groupKey: string, title: string | null) => void;
 }) {
-  const { groupKey, onToggle, onNewThread } = props;
+  const { groupKey, onToggle, onNewThread, onOpenMenu, onRenameEnd } = props;
+  // Hover-only actions; touch has no hover, so they stay visible there.
+  const actionClassName =
+    "pointer-events-none inline-flex size-6 cursor-pointer items-center justify-center rounded-md text-icon-muted opacity-0 outline-hidden hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100";
   return (
     // The gap and rule make each project's rows read as their own block.
     <li
       className={cn("list-none", props.separated && "mt-4 border-t border-sidebar-border pt-2")}
       data-om-project-group={groupKey}
     >
-      <div className="group/project-header relative">
-        <button
-          type="button"
-          aria-expanded={!props.collapsed}
-          onClick={() => onToggle(groupKey, !props.collapsed)}
-          className="flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-sm px-1.5 text-left text-xs text-sidebar-foreground outline-hidden hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring group-focus-within/project-header:pr-8 group-hover/project-header:bg-sidebar-row-hover group-hover/project-header:pr-8 pointer-coarse:pr-8"
-        >
-          <ChevronRightIcon
-            aria-hidden
-            className={cn("size-3 shrink-0 transition-transform", !props.collapsed && "rotate-90")}
-          />
-          {props.project ? (
-            <ProjectFavicon project={props.project} className="size-3.5 shrink-0" />
-          ) : null}
-          <span className="min-w-0 flex-1 truncate font-semibold uppercase tracking-wide">
-            {props.label}
-          </span>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span
-                  className="flex shrink-0 items-center font-mono tabular-nums"
-                  aria-label={describeThreadStateCounts(props.stateCounts)}
-                />
-              }
-            >
-              {OM_THREAD_STATE_ORDER.filter((state) => props.stateCounts[state] > 0).map(
-                (state, index) => (
-                  <span key={state}>
-                    {index > 0 ? <span className="text-sidebar-muted-foreground/60">/</span> : null}
-                    <span className={STATE_CLASS_NAME[state]}>{props.stateCounts[state]}</span>
-                  </span>
-                ),
-              )}
-            </TooltipTrigger>
-            <TooltipPopup side="top">{describeThreadStateCounts(props.stateCounts)}</TooltipPopup>
-          </Tooltip>
-        </button>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                aria-label={`New thread in ${props.label}`}
-                onClick={() => onNewThread(groupKey)}
-                className="pointer-events-none absolute top-1/2 right-0.5 inline-flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-icon-muted opacity-0 outline-hidden hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100"
-              />
-            }
+      {props.renaming ? (
+        <ProjectRenameField label={props.label} onEnd={(title) => onRenameEnd(groupKey, title)} />
+      ) : (
+        <div className="group/project-header relative">
+          <button
+            type="button"
+            aria-expanded={!props.collapsed}
+            onClick={() => onToggle(groupKey, !props.collapsed)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              onOpenMenu(groupKey, { x: event.clientX, y: event.clientY });
+            }}
+            className="flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-sm px-1.5 text-left text-xs text-sidebar-foreground outline-hidden hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring group-focus-within/project-header:pr-14 group-hover/project-header:bg-sidebar-row-hover group-hover/project-header:pr-14 pointer-coarse:pr-14"
           >
-            <SquarePenIcon aria-hidden className="size-3.5" />
-          </TooltipTrigger>
-          <TooltipPopup side="top">New thread</TooltipPopup>
-        </Tooltip>
-      </div>
+            <ChevronRightIcon
+              aria-hidden
+              className={cn(
+                "size-3 shrink-0 transition-transform",
+                !props.collapsed && "rotate-90",
+              )}
+            />
+            {props.project ? (
+              <ProjectFavicon project={props.project} className="size-3.5 shrink-0" />
+            ) : null}
+            <span className="min-w-0 flex-1 truncate font-semibold uppercase tracking-wide">
+              {props.label}
+            </span>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span
+                    className="flex shrink-0 items-center font-mono tabular-nums"
+                    aria-label={describeThreadStateCounts(props.stateCounts)}
+                  />
+                }
+              >
+                {OM_THREAD_STATE_ORDER.filter((state) => props.stateCounts[state] > 0).map(
+                  (state, index) => (
+                    <span key={state}>
+                      {index > 0 ? (
+                        <span className="text-sidebar-muted-foreground/60">/</span>
+                      ) : null}
+                      <span className={STATE_CLASS_NAME[state]}>{props.stateCounts[state]}</span>
+                    </span>
+                  ),
+                )}
+              </TooltipTrigger>
+              <TooltipPopup side="top">{describeThreadStateCounts(props.stateCounts)}</TooltipPopup>
+            </Tooltip>
+          </button>
+          <div className="absolute top-1/2 right-0.5 flex -translate-y-1/2 items-center">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label={`New thread in ${props.label}`}
+                    onClick={() => onNewThread(groupKey)}
+                    className={actionClassName}
+                  />
+                }
+              >
+                <SquarePenIcon aria-hidden className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">New thread</TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label={`Project actions for ${props.label}`}
+                    aria-haspopup="menu"
+                    onClick={(event) => {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      onOpenMenu(groupKey, { x: rect.left, y: rect.bottom + 4 });
+                    }}
+                    className={actionClassName}
+                  />
+                }
+              >
+                <EllipsisIcon aria-hidden className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">Project actions</TooltipPopup>
+            </Tooltip>
+          </div>
+        </div>
+      )}
     </li>
   );
 });
+
+/** Inline project name field: Enter or blur saves, Escape cancels. */
+function ProjectRenameField(props: { label: string; onEnd: (title: string | null) => void }) {
+  const endedRef = useRef(false);
+  const end = (title: string | null) => {
+    if (endedRef.current) return;
+    endedRef.current = true;
+    props.onEnd(title);
+  };
+  return (
+    <input
+      autoFocus
+      aria-label="Project name"
+      defaultValue={props.label}
+      onFocus={(event) => event.currentTarget.select()}
+      onBlur={(event) => end(event.currentTarget.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") end(event.currentTarget.value);
+        if (event.key === "Escape") end(null);
+      }}
+      className="h-7 w-full rounded-sm border border-ring bg-sidebar px-1.5 text-xs font-semibold text-sidebar-foreground outline-hidden"
+    />
+  );
+}
 
 /** Row under a project's active threads that shows or hides its settled ones. */
 export const SidebarProjectSettledToggle = memo(function SidebarProjectSettledToggle(props: {

@@ -6,7 +6,6 @@
  */
 import type { EnvironmentId, ThreadId, ThreadUsageSummary } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { useMemo } from "react";
 import {
   formatEstimatedCost,
   threadUsageTotalTokens,
@@ -72,10 +71,7 @@ export function ThreadUsageBreakdown(props: { usage: ThreadUsageSummary }) {
 
 /** Thread header chip with a breakdown tooltip. */
 export function ThreadUsageHeaderChip(props: { environmentId: EnvironmentId; threadId: ThreadId }) {
-  const threadRef = useMemo(
-    () => scopeThreadRef(props.environmentId, props.threadId),
-    [props.environmentId, props.threadId],
-  );
+  const threadRef = scopeThreadRef(props.environmentId, props.threadId);
   const usage = useThreadShell(threadRef)?.usage;
   if (!usage) return null;
   return (

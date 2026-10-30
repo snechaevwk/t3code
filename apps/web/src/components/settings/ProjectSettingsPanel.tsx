@@ -2,9 +2,9 @@ import { useComposerMenuState } from "../chat/useComposerMenuState";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { useEnvironmentsWithScope } from "../../state/session";
 import { type EnvironmentId, type ProjectIconOverride } from "@t3tools/contracts";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { Navigate, useLocation, useNavigate } from "@tanstack/react-router";
 import { InfoIcon, Trash2Icon } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 
 import {
   type SidebarProjectGroupMember,
@@ -15,6 +15,7 @@ import { ProjectFavicon } from "../ProjectFavicon";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   SettingResetButton,
   SettingsPageContainer,
@@ -29,6 +30,7 @@ import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { useProjectGroupCommands } from "./useProjectGroupCommands";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
+import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 
 const ProjectIconPickerDialog = lazy(() =>
   import("./ProjectIconPickerDialog").then((module) => ({
@@ -36,78 +38,87 @@ const ProjectIconPickerDialog = lazy(() =>
   })),
 );
 
-/** `project` is the Projects page shortcut: the new-thread defaults people change most. */
-export type ProjectSettingsCategory = "general" | "integrations" | "source-control" | "project";
+export type ProjectSettingsCategory = "general" | "source-control" | "project";
+
+interface ProjectSelection {
+  readonly key: string;
+  readonly environmentId: EnvironmentId | null;
+  readonly checkoutKey: string | null;
+  readonly memberKeys: ReadonlyArray<string>;
+}
+
+function sameProjectSelection(a: ProjectSelection | null, b: ProjectSelection): boolean {
+  return (
+    a !== null &&
+    a.key === b.key &&
+    a.environmentId === b.environmentId &&
+    a.checkoutKey === b.checkoutKey &&
+    a.memberKeys.length === b.memberKeys.length &&
+    a.memberKeys.every((key, index) => key === b.memberKeys[index])
+  );
+}
 
 export function ProjectSettingsPanel({
   projectKey,
   environmentId = null,
   checkoutKey = null,
+  unavailable,
 }: {
   projectKey: string;
   environmentId?: EnvironmentId | null;
   checkoutKey?: string | null;
+  unavailable?: ReactNode;
 }) {
   const groups = useSettingsProjectGroups();
-  const navigate = useNavigate({ from: "/settings" });
   const pathname = useLocation({ select: (location) => location.pathname });
 
   const selected = groups.find((group) => group.projectKey === projectKey) ?? null;
-  const members = useMemo(
-    () =>
-      selected?.memberProjects.filter(
-        (member) =>
-          (environmentId === null || member.environmentId === environmentId) &&
-          (checkoutKey === null || member.physicalProjectKey === checkoutKey),
-      ) ?? [],
-    [selected, environmentId, checkoutKey],
-  );
+  const members =
+    selected?.memberProjects.filter(
+      (member) =>
+        (environmentId === null || member.environmentId === environmentId) &&
+        (checkoutKey === null || member.physicalProjectKey === checkoutKey),
+    ) ?? [];
 
-  // Remember the members of the last rendered group so a grouping-rule change
-  // (which changes the group key) can follow the project to its new group.
-  const lastSelectionRef = useRef<{
-    key: string;
-    environmentId: EnvironmentId | null;
-    checkoutKey: string | null;
-    memberKeys: string[];
-  } | null>(null);
-  useEffect(() => {
-    if (!selected || members.length === 0) return;
-    lastSelectionRef.current = {
+  // Retain group members so grouping-rule changes can follow the project to its new group.
+  const [lastSelection, setLastSelection] = useState<ProjectSelection | null>(null);
+  if (selected && members.length > 0) {
+    const current: ProjectSelection = {
       key: selected.projectKey,
       environmentId,
       checkoutKey,
       memberKeys: members.map((member) => member.physicalProjectKey),
     };
-  }, [selected, members, environmentId, checkoutKey]);
+    if (!sameProjectSelection(lastSelection, current)) setLastSelection(current);
+  }
 
-  // A grouping-rule change replaces the group key mid-visit; follow the
-  // project to its new key instead of parking on the not-found state.
-  useEffect(() => {
-    if (members.length > 0) return;
-    const last = lastSelectionRef.current;
-    if (
-      last?.key !== projectKey ||
-      last.environmentId !== environmentId ||
-      last.checkoutKey !== checkoutKey
-    )
-      return;
-    const successor = groups.find((group) =>
-      group.memberProjects.some((member) => last.memberKeys.includes(member.physicalProjectKey)),
-    );
-    if (successor) {
-      void navigate({
-        to: pathname,
-        search: () => ({
+  const successor =
+    members.length === 0 &&
+    lastSelection?.key === projectKey &&
+    lastSelection.environmentId === environmentId &&
+    lastSelection.checkoutKey === checkoutKey
+      ? groups.find((group) =>
+          group.memberProjects.some((member) =>
+            lastSelection.memberKeys.includes(member.physicalProjectKey),
+          ),
+        )
+      : undefined;
+  if (successor) {
+    return (
+      <Navigate
+        to={pathname}
+        search={{
           project: successor.projectKey,
           machine: environmentId ?? undefined,
           checkout: checkoutKey ?? undefined,
-        }),
-        replace: true,
-        hashScrollIntoView: false,
-      });
-    }
-  }, [groups, navigate, pathname, projectKey, members.length, environmentId, checkoutKey]);
+        }}
+        replace
+        hashScrollIntoView={false}
+      />
+    );
+  }
+
+  if ((!selected || members.length === 0) && unavailable != null) return unavailable;
 
   if (!selected) {
     return (
@@ -149,9 +160,8 @@ function ProjectDetail({
   const navigate = useNavigate({ from: "/settings" });
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { environments } = useEnvironments();
-  const environmentById = useMemo(
-    () => new Map(environments.map((environment) => [environment.environmentId, environment])),
-    [environments],
+  const environmentById = new Map(
+    environments.map((environment) => [environment.environmentId, environment]),
   );
   const editableIds = useEnvironmentsWithScope(group.memberProjects, AuthOrchestrationOperateScope);
   const canEditGroup = group.memberProjects.every((member) =>
@@ -177,58 +187,117 @@ function ProjectDetail({
 
   const { updateAllMembers, renameGroup, removeMembers } = useProjectGroupCommands();
 
-  // ----- project icon -----
   const [faviconPickerOpen, setFaviconPickerOpen] = useComposerMenuState(!canEditGroup);
   const [iconPickerOpen, setIconPickerOpen] = useComposerMenuState(!canEditGroup);
   const [isSavingFavicon, setIsSavingFavicon] = useState(false);
   const savingFaviconRef = useRef(false);
-  const setProjectIcon = useCallback(
-    async (input: { faviconPath: string | null; projectIcon: ProjectIconOverride | null }) => {
-      if (savingFaviconRef.current) return;
-      savingFaviconRef.current = true;
-      setIsSavingFavicon(true);
-      try {
-        await updateAllMembers(group, input, "Failed to update project icon");
-      } finally {
-        savingFaviconRef.current = false;
-        setIsSavingFavicon(false);
-      }
-    },
-    [group, updateAllMembers],
-  );
+  const setProjectIcon = async (input: {
+    faviconPath: string | null;
+    projectIcon: ProjectIconOverride | null;
+  }) => {
+    if (savingFaviconRef.current) return;
+    savingFaviconRef.current = true;
+    setIsSavingFavicon(true);
+    await updateAllMembers(group, input, "Failed to update project icon");
+    savingFaviconRef.current = false;
+    setIsSavingFavicon(false);
+  };
 
   const hasMultipleCheckouts = group.memberProjects.length > 1;
 
-  const removeGroupMembers = useCallback(
-    async (members: ReadonlyArray<SidebarProjectGroupMember>) => {
-      const removed = await removeMembers(group, members, hasOtherMembers);
-      if (removed && members.length === group.memberProjects.length && !hasOtherMembers) {
-        void navigate({ to: "/", replace: true });
-      }
-    },
-    [group, hasOtherMembers, navigate, removeMembers],
-  );
+  const removeGroupMembers = async (members: ReadonlyArray<SidebarProjectGroupMember>) => {
+    const removed = await removeMembers(group, members, hasOtherMembers);
+    if (removed && members.length === group.memberProjects.length && !hasOtherMembers) {
+      void navigate({
+        to: "/settings/projects",
+        search: ({ machine }) => ({ project: undefined, machine, checkout: undefined }),
+        replace: true,
+      });
+    }
+  };
 
+  const checkoutsByEnvironment = new Map<EnvironmentId, SidebarProjectGroupMember[]>();
+  for (const member of group.memberProjects) {
+    const members = checkoutsByEnvironment.get(member.environmentId);
+    if (members) members.push(member);
+    else checkoutsByEnvironment.set(member.environmentId, [member]);
+  }
+  const checkoutRemoveButton = (member: SidebarProjectGroupMember) => (
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={!editableIds.has(member.environmentId)}
+      onClick={() => void removeGroupMembers([member])}
+      aria-label={`Remove checkout ${member.workspaceRoot}`}
+    >
+      Remove
+    </Button>
+  );
   const checkoutChoices = (
     <SettingsSection title="Checkouts">
-      {group.memberProjects.map((member) => (
-        <SettingsRow
-          key={member.physicalProjectKey}
-          title={member.environmentLabel ?? "Environment"}
-          description={member.workspaceRoot}
-          control={
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!editableIds.has(member.environmentId)}
-              onClick={() => void removeGroupMembers([member])}
-              aria-label={`Remove checkout ${member.workspaceRoot}`}
-            >
-              Remove
-            </Button>
-          }
-        />
-      ))}
+      {Array.from(checkoutsByEnvironment, ([environmentId, members]) => {
+        if (checkoutsByEnvironment.size === 1) {
+          return members.map((member) => (
+            <SettingsRow
+              key={member.physicalProjectKey}
+              title={member.environmentLabel ?? "Environment"}
+              description={member.workspaceRoot}
+              control={checkoutRemoveButton(member)}
+            />
+          ));
+        }
+        const firstMember = members[0]!;
+        const hasMultiple = members.length > 1;
+        const environment = environmentById.get(environmentId);
+        const labels = environment
+          ? settingsScopeEnvironmentLabels(environment, environments)
+          : { primary: firstMember.environmentLabel ?? "Environment", secondary: environmentId };
+        return (
+          <SettingsRow
+            key={environmentId}
+            title={labels.primary}
+            description={
+              <>
+                {labels.secondary ? (
+                  <span className="block truncate">{labels.secondary}</span>
+                ) : null}
+                {!hasMultiple ? (
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="block truncate" />}>
+                      {firstMember.workspaceRoot}
+                    </TooltipTrigger>
+                    <TooltipPopup>{firstMember.workspaceRoot}</TooltipPopup>
+                  </Tooltip>
+                ) : null}
+              </>
+            }
+            control={hasMultiple ? undefined : checkoutRemoveButton(firstMember)}
+          >
+            {hasMultiple ? (
+              <div className="space-y-3 pb-2 pt-1">
+                {members.map((member) => (
+                  <div
+                    key={member.physicalProjectKey}
+                    className="flex min-w-0 items-center justify-between gap-3"
+                  >
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <span className="min-w-0 truncate text-xs text-muted-foreground/80" />
+                        }
+                      >
+                        {member.workspaceRoot}
+                      </TooltipTrigger>
+                      <TooltipPopup>{member.workspaceRoot}</TooltipPopup>
+                    </Tooltip>
+                    <div className="shrink-0">{checkoutRemoveButton(member)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </SettingsRow>
+        );
+      })}
     </SettingsSection>
   );
 

@@ -1,20 +1,7 @@
 /**
- * Per-thread token and estimated cost rollups for the sidebar and thread
- * header (OM Code fork feature).
- *
- * The orchestrator already persists each provider turn's normalized
- * `turnTokenUsage` in its projection, so totals are read from there: no
- * extra events or tables, and nothing for upstream migrations to collide
- * with. The model comes from the turn's run, falling back to the thread's
- * current selection. Cost is priced at read time from `UsageService`'s rate
- * table, so a table that loads later (or a new price override) applies to
- * old turns.
- *
- * Shells reach clients through `ThreadManagementService`, which runs them
- * through {@link makeShellUsageEnricher}. Every piece is optional: without a
- * SQL client or usage service the shells simply carry no `usage`.
- *
- * @module ThreadUsage
+ * OM Code: per-thread token and cost totals, read from the projected `turnTokenUsage`
+ * so no events or tables collide with upstream migrations. Cost is priced at read
+ * time, so later rate tables apply to old turns. Without SQL or `UsageService`, no `usage`.
  */
 import type {
   OrchestrationV2ThreadShell,
@@ -162,8 +149,8 @@ export const makeShellUsageEnricher = Effect.gen(function* () {
       `,
     ).pipe(Effect.map((chunks) => chunks.flat()));
 
-  const summarize = (shells: ReadonlyArray<OrchestrationV2ThreadShell>) =>
-    Effect.gen(function* () {
+  const summarize = Effect.fn("OmThreadUsage.summarize")(
+    function* (shells: ReadonlyArray<OrchestrationV2ThreadShell>) {
       const summaries = new Map<string, ThreadUsageSummary>();
       if (Option.isNone(sqlOption) || shells.length === 0) return summaries;
       const rows = yield* readRows(
@@ -191,14 +178,14 @@ export const makeShellUsageEnricher = Effect.gen(function* () {
         summaries.set(threadId, summarizeTurnUsage(records, tables));
       }
       return summaries;
-    }).pipe(
-      // Usage is decoration: a failed read must never block the shell.
-      Effect.catchCause((cause) =>
-        Effect.logWarning("om thread usage read failed", { cause }).pipe(
-          Effect.as(new Map<string, ThreadUsageSummary>()),
-        ),
+    },
+    // Usage is decoration: a failed read must never block the shell.
+    Effect.catchCause((cause) =>
+      Effect.logWarning("om thread usage read failed", { cause }).pipe(
+        Effect.as(new Map<string, ThreadUsageSummary>()),
       ),
-    );
+    ),
+  );
 
   const withUsage = (
     shell: OrchestrationV2ThreadShell,

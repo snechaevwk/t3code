@@ -1,6 +1,6 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo } from "react";
 
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 
@@ -19,28 +19,21 @@ export function useOmProjectGroupingPreferences() {
   const collapsedList =
     (loaded ? preferencesResult.value.collapsedProjectGroups : undefined) ?? EMPTY_KEYS;
   const collapsedKeys = useMemo(() => new Set(collapsedList), [collapsedList]);
-  const groupByProjectRef = useRef(groupByProject);
-  const collapsedRef = useRef(collapsedList);
-  groupByProjectRef.current = groupByProject;
-  collapsedRef.current = collapsedList;
 
   const toggleGroupByProject = useCallback(() => {
     if (!loaded) return;
-    const next = !groupByProjectRef.current;
-    groupByProjectRef.current = next;
-    savePreferences({ omThreadListGroupByProject: next });
-  }, [loaded, savePreferences]);
+    savePreferences({ omThreadListGroupByProject: !groupByProject });
+  }, [groupByProject, loaded, savePreferences]);
   const toggleGroupCollapsed = useCallback(
     (groupKey: string) => {
       if (!loaded) return;
-      const current = collapsedRef.current;
-      const next = current.includes(groupKey)
-        ? current.filter((key) => key !== groupKey)
-        : [...current, groupKey];
-      collapsedRef.current = next;
-      savePreferences({ collapsedProjectGroups: next });
+      savePreferences({
+        collapsedProjectGroups: collapsedList.includes(groupKey)
+          ? collapsedList.filter((key) => key !== groupKey)
+          : [...collapsedList, groupKey],
+      });
     },
-    [loaded, savePreferences],
+    [collapsedList, loaded, savePreferences],
   );
 
   return { groupByProject, collapsedKeys, toggleGroupByProject, toggleGroupCollapsed } as const;

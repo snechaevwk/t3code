@@ -1,14 +1,7 @@
 /**
- * Per-thread token and cost rollup shown in the sidebar and thread header.
- *
- * Fork-owned (OM Code). Kept in its own module so upstream merges only touch
- * the single optional `usage` field on {@link OrchestrationThreadShell}.
- *
- * Token figures follow `TurnTokenUsage`: `inputTokens` includes cache reads
- * and writes, `cachedInputTokens` is the cache-read subset, and
- * `reasoningTokens` is a subset of `outputTokens`.
- *
- * @module omThreadUsage
+ * OM Code: per-thread token and cost rollup, kept apart so upstream merges only
+ * touch the optional `usage` field on {@link OrchestrationThreadShell}. Figures follow
+ * `TurnTokenUsage`: input includes cache reads and writes, reasoning is part of output.
  */
 import * as Schema from "effect/Schema";
 

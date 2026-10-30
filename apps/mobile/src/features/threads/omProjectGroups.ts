@@ -1,10 +1,6 @@
 /**
- * Project group headers for the mobile thread list (OM Code fork feature).
- *
- * The active block of Thread List v2 is regrouped under one header per
- * project; pinned rows stay above the groups and the pending, snoozed and
- * settled shelves are untouched. Mirrors the web sidebar grouping in
- * apps/web/src/om/sidebarProjectGroups.ts.
+ * OM Code: regroups Thread List v2's active block under one header per project.
+ * Pinned rows and the shelves are untouched. Mirrors apps/web/src/om/sidebarProjectGroups.ts.
  */
 import type {
   EnvironmentProject,
